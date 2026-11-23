@@ -30,7 +30,9 @@
         {
           "root": "./src/app"
         }
-      ]
+      ],
+      "expo-asset",
+      "expo-font"
     ],
     "experiments": {
       "typedRoutes": true
