@@ -1,0 +1,39 @@
+{
+  "expo": {
+    "name": "Ryde.",
+    "slug": "ryde-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "ryde",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "splash": {
+      "backgroundColor": "#F5F2EC"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.ryde.mobile",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Ryde. uses your location to set accurate pickup points and track nearby drivers."
+      }
+    },
+    "android": {
+      "package": "com.ryde.mobile",
+      "edgeToEdgeEnabled": true,
+      "adaptiveIcon": {
+        "backgroundColor": "#FFD95A"
+      }
+    },
+    "plugins": [
+      [
+        "expo-router",
+        {
+          "root": "./src/app"
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
