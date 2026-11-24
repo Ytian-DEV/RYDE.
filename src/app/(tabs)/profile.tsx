@@ -37,7 +37,6 @@ export default function ProfileScreen() {
   const { colors, isDark } = useAppTheme();
   const insets = useSafeAreaInsets();
 
-  const isLiveBackend = useRydeStore((s) => s.isLiveBackend);
   const user = useRydeStore((s) => s.user);
   const driverVehicle = useRydeStore((s) => s.driverVehicle);
   const themeMode = useRydeStore((s) => s.themeMode);
@@ -124,21 +123,6 @@ export default function ProfileScreen() {
           <Text style={[TYPOGRAPHY.largeTitle, { color: colors.textPrimary }]}>
             Profile
           </Text>
-          <GlassSurface radius={RADII.pill} contentStyle={styles.liveChip}>
-            <View
-              style={[
-                styles.liveDot,
-                {
-                  backgroundColor: isLiveBackend
-                    ? colors.success
-                    : colors.brandGoldDeep,
-                },
-              ]}
-            />
-            <Text style={[styles.liveText, { color: colors.textSecondary }]}>
-              {isLiveBackend ? 'Supabase Live' : 'Preview Mode'}
-            </Text>
-          </GlassSurface>
         </View>
 
         {/* User Hero Liquid Glass Card */}
@@ -223,7 +207,7 @@ export default function ProfileScreen() {
                 >
                   {driverVehicle?.isOnline
                     ? 'Online now • Accepting live requests'
-                    : 'Go online, accept rides & earn via Realtime'}
+                    : 'Go online, accept rides & start earning'}
                 </Text>
               </View>
             </View>
@@ -871,22 +855,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-  },
-  liveChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-  },
-  liveDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  liveText: {
-    fontSize: 12,
-    fontWeight: '600',
   },
   heroCard: {
     flexDirection: 'row',
