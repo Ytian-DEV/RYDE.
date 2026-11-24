@@ -19,6 +19,7 @@ import {
   GlassSurface,
   InteractiveMap,
   PrimaryButton,
+  SkeletonBox,
 } from '@/components/ui';
 import { formatPeso, RADII, SQUIRCLE, TABULAR_NUMS } from '@/constants/theme';
 import { BAYBAY_PLACES, RIDE_TIERS } from '@/data/mockData';
@@ -51,6 +52,7 @@ export default function DriverDashboardScreen() {
   const [draftMsg, setDraftMsg] = useState('');
   const [activeRoute, setActiveRoute] = useState<RouteGeometry | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [loadingRequests, setLoadingRequests] = useState(true);
 
   // Vehicle form state (empty until configured by the driver)
   const [vModel, setVModel] = useState(driverVehicle?.vehicleModel ?? '');
@@ -65,7 +67,10 @@ export default function DriverDashboardScreen() {
 
   // Realtime subscription to incoming searching rides
   useEffect(() => {
-    refreshOpenRequests().catch(() => {});
+    setLoadingRequests(true);
+    refreshOpenRequests()
+      .catch(() => {})
+      .finally(() => setLoadingRequests(false));
     const channel = subscribeToSearchingRides(() => {
       refreshOpenRequests().catch(() => {});
     });
@@ -390,6 +395,11 @@ export default function DriverDashboardScreen() {
                   Toggle Driver Online above to broadcast your GPS and accept
                   live passenger requests.
                 </Text>
+              ) : loadingRequests && openRequests.length === 0 ? (
+                <View style={{ gap: 10, paddingVertical: 6 }}>
+                  <SkeletonBox width="100%" height={78} radius={18} />
+                  <SkeletonBox width="100%" height={78} radius={18} />
+                </View>
               ) : openRequests.length === 0 ? (
                 <Text
                   style={[styles.emptyHint, { color: colors.textSecondary }]}

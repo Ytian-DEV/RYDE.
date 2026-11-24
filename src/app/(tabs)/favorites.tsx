@@ -11,7 +11,7 @@ import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { GlassSurface } from '@/components/ui';
+import { GlassSurface, SkeletonBox } from '@/components/ui';
 import { RADII, SQUIRCLE, TABULAR_NUMS, TYPOGRAPHY } from '@/constants/theme';
 import { BAYBAY_PLACES } from '@/data/mockData';
 import { useAppTheme } from '@/hooks/useAppTheme';
@@ -21,6 +21,7 @@ import { DriverProfile, PlaceLocation } from '@/types';
 export default function FavoritesScreen() {
   const { colors } = useAppTheme();
   const insets = useSafeAreaInsets();
+  const hydrating = useRydeStore((s) => s.hydrating);
   const favorites = useRydeStore((s) => s.favorites);
   const trips = useRydeStore((s) => s.trips);
   const addFavorite = useRydeStore((s) => s.addFavorite);
@@ -103,7 +104,21 @@ export default function FavoritesScreen() {
           SAVED PLACES
         </Text>
 
-        {favorites.length === 0 ? (
+        {hydrating && favorites.length === 0 ? (
+          <View style={styles.list}>
+            {[0, 1].map((idx) => (
+              <GlassSurface key={idx} radius={RADII.lg} contentStyle={styles.placeCard}>
+                <View style={styles.placeLeft}>
+                  <SkeletonBox width={40} height={40} radius={13} />
+                  <View style={[styles.placeText, { gap: 7 }]}>
+                    <SkeletonBox width={145} height={15} radius={6} />
+                    <SkeletonBox width={190} height={12} radius={6} />
+                  </View>
+                </View>
+              </GlassSurface>
+            ))}
+          </View>
+        ) : favorites.length === 0 ? (
           <GlassSurface radius={RADII.xl} contentStyle={styles.emptyCard}>
             <Ionicons
               name="heart-outline"

@@ -5,6 +5,7 @@ import {
   StyleProp,
   StyleSheet,
   Text,
+  View,
   ViewStyle,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
@@ -12,12 +13,14 @@ import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withSpring,
+  withTiming,
 } from 'react-native-reanimated';
 import { RADII, SQUIRCLE, TABULAR_NUMS } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/useAppTheme';
 
 export interface PrimaryButtonProps {
   label: string;
+  loadingLabel?: string;
   onPress: () => void;
   variant?: 'gold' | 'obsidian' | 'danger' | 'ghost';
   disabled?: boolean;
@@ -30,6 +33,7 @@ const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 export const PrimaryButton: React.FC<PrimaryButtonProps> = ({
   label,
+  loadingLabel,
   onPress,
   variant = 'gold',
   disabled = false,
@@ -39,21 +43,28 @@ export const PrimaryButton: React.FC<PrimaryButtonProps> = ({
 }) => {
   const { colors, isDark } = useAppTheme();
   const scale = useSharedValue(1);
+  const pressOpacity = useSharedValue(1);
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
+    opacity: pressOpacity.value,
   }));
 
+  const isDisabled = disabled || loading;
+
   const handlePressIn = () => {
-    scale.value = withSpring(0.97, { damping: 18, stiffness: 320 });
+    if (isDisabled) return;
+    scale.value = withSpring(0.968, { damping: 18, stiffness: 360 });
+    pressOpacity.value = withTiming(0.9, { duration: 90 });
   };
 
   const handlePressOut = () => {
-    scale.value = withSpring(1, { damping: 18, stiffness: 320 });
+    scale.value = withSpring(1, { damping: 16, stiffness: 320 });
+    pressOpacity.value = withTiming(1, { duration: 140 });
   };
 
   const handlePress = () => {
-    if (disabled || loading) return;
+    if (isDisabled) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
     onPress();
   };
@@ -88,25 +99,33 @@ export const PrimaryButton: React.FC<PrimaryButtonProps> = ({
       onPress={handlePress}
       onPressIn={handlePressIn}
       onPressOut={handlePressOut}
-      disabled={disabled || loading}
+      disabled={isDisabled}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? label}
+      accessibilityState={{ disabled: isDisabled, busy: loading }}
       style={[
         styles.button,
         SQUIRCLE,
         {
           backgroundColor: bgColor,
           borderColor,
-          opacity: disabled ? 0.52 : 1,
+          opacity: disabled && !loading ? 0.52 : 1,
           shadowColor: variant === 'gold' ? colors.brandGoldDeep : colors.shadowColor,
           shadowOpacity: variant === 'gold' ? (isDark ? 0.28 : 0.34) : 0.08,
         },
         animatedStyle,
-        style,
+        style ?? null,
       ]}
     >
       {loading ? (
-        <ActivityIndicator color={textColor} />
+        <View style={styles.loadingRow}>
+          <ActivityIndicator size="small" color={textColor} />
+          {loadingLabel ? (
+            <Text style={[styles.label, TABULAR_NUMS, { color: textColor }]}>
+              {loadingLabel}
+            </Text>
+          ) : null}
+        </View>
       ) : (
         <Text style={[styles.label, TABULAR_NUMS, { color: textColor }]}>
           {label}
@@ -118,20 +137,25 @@ export const PrimaryButton: React.FC<PrimaryButtonProps> = ({
 
 const styles = StyleSheet.create({
   button: {
-    height: 56,
-    minHeight: 48,
+    minHeight: 54,
     borderRadius: RADII.pill,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 24,
     shadowOffset: { width: 0, height: 8 },
-    shadowRadius: 20,
-    elevation: 6,
+    shadowRadius: 18,
+    elevation: 5,
+  },
+  loadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
   },
   label: {
-    fontSize: 17,
-    fontWeight: '600',
+    fontSize: 16,
+    fontWeight: '700',
     letterSpacing: -0.2,
   },
 });

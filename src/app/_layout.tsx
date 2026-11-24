@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { StyleSheet } from 'react-native';
+import { Platform, StyleSheet } from 'react-native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -38,7 +38,8 @@ export default function RootLayout() {
             screenOptions={{
               headerShown: false,
               contentStyle: { backgroundColor: colors.canvas },
-              animation: 'slide_from_right',
+              animation: Platform.OS === 'ios' ? 'ios_from_right' : 'slide_from_right',
+              animationDuration: 260,
             }}
           >
             <Stack.Screen name="index" options={{ animation: 'fade' }} />

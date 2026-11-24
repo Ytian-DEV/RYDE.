@@ -11,7 +11,7 @@ import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { GlassSurface, PrimaryButton } from '@/components/ui';
+import { GlassSurface, PrimaryButton, SkeletonBox } from '@/components/ui';
 import {
   formatPeso,
   RADII,
@@ -35,6 +35,7 @@ const FILTERS: { id: FilterTab; label: string }[] = [
 export default function OrdersScreen() {
   const { colors } = useAppTheme();
   const insets = useSafeAreaInsets();
+  const hydrating = useRydeStore((s) => s.hydrating);
   const trips = useRydeStore((s) => s.trips);
   const rebookTrip = useRydeStore((s) => s.rebookTrip);
 
@@ -124,19 +125,38 @@ export default function OrdersScreen() {
         ]}
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={
-          <GlassSurface radius={RADII.xl} contentStyle={styles.emptyCard}>
-            <Ionicons
-              name="receipt-outline"
-              size={34}
-              color={colors.textTertiary}
-            />
-            <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>
-              No activity in this category yet
-            </Text>
-            <Text style={[styles.emptySub, { color: colors.textSecondary }]}>
-              Completed rides, food deliveries, and errands will appear here.
-            </Text>
-          </GlassSurface>
+          hydrating ? (
+            <View style={{ gap: 12 }}>
+              {[0, 1, 2].map((idx) => (
+                <GlassSurface key={idx} radius={RADII.xl} contentStyle={styles.tripCard}>
+                  <View style={styles.tripTop}>
+                    <View style={styles.tripLeft}>
+                      <SkeletonBox width={42} height={42} radius={14} />
+                      <View style={[styles.tripMeta, { gap: 8 }]}>
+                        <SkeletonBox width={160} height={15} radius={6} />
+                        <SkeletonBox width={110} height={12} radius={6} />
+                      </View>
+                    </View>
+                    <SkeletonBox width={54} height={18} radius={6} />
+                  </View>
+                </GlassSurface>
+              ))}
+            </View>
+          ) : (
+            <GlassSurface radius={RADII.xl} contentStyle={styles.emptyCard}>
+              <Ionicons
+                name="receipt-outline"
+                size={34}
+                color={colors.textTertiary}
+              />
+              <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>
+                No activity in this category yet
+              </Text>
+              <Text style={[styles.emptySub, { color: colors.textSecondary }]}>
+                Completed rides, food deliveries, and errands will appear here.
+              </Text>
+            </GlassSurface>
+          )
         }
         renderItem={({ item }) => (
           <Pressable

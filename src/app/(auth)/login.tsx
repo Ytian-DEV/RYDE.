@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -12,6 +12,17 @@ import {
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import Animated, {
+  FadeIn,
+  FadeInDown,
+  FadeOut,
+  FadeOutUp,
+  LinearTransition,
+  useAnimatedStyle,
+  useSharedValue,
+  withSequence,
+  withTiming,
+} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BrandBadge, GlassSurface, OAuthButton, PrimaryButton } from '@/components/ui';
 import { RADII, SQUIRCLE, TABULAR_NUMS, TYPOGRAPHY } from '@/constants/theme';
@@ -48,6 +59,22 @@ export default function LoginScreen() {
   const [phone, setPhone] = useState('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [focusedField, setFocusedField] = useState<string | null>(null);
+
+  const errorShakeX = useSharedValue(0);
+  useEffect(() => {
+    if (!errorMsg) return;
+    errorShakeX.value = withSequence(
+      withTiming(-7, { duration: 48 }),
+      withTiming(7, { duration: 48 }),
+      withTiming(-4, { duration: 48 }),
+      withTiming(4, { duration: 48 }),
+      withTiming(0, { duration: 48 })
+    );
+  }, [errorMsg, errorShakeX]);
+
+  const errorShakeStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: errorShakeX.value }],
+  }));
 
   const isValidEmail = email.trim().includes('@') && email.trim().includes('.');
   const isValidPassword = password.length >= 6;
@@ -189,9 +216,16 @@ export default function LoginScreen() {
           </View>
 
           {/* Form Fields */}
-          <View style={styles.form}>
+          <Animated.View
+            layout={LinearTransition.springify().damping(20).stiffness(240)}
+            style={styles.form}
+          >
             {mode === 'signup' ? (
-              <View style={styles.nameRow}>
+              <Animated.View
+                entering={FadeInDown.duration(220)}
+                exiting={FadeOutUp.duration(160)}
+                style={styles.nameRow}
+              >
                 <GlassSurface
                   radius={RADII.lg}
                   borderColor={
@@ -237,73 +271,83 @@ export default function LoginScreen() {
                     style={[styles.input, { color: colors.textPrimary, opacity: isBusy ? 0.55 : 1 }]}
                   />
                 </GlassSurface>
-              </View>
+              </Animated.View>
             ) : null}
 
             {mode === 'signup' ? (
-              <GlassSurface
-                radius={RADII.lg}
-                borderColor={
-                  focusedField === 'middle'
-                    ? colors.brandGoldDeep
-                    : colors.borderSpecular
-                }
-                contentStyle={styles.inputBox}
+              <Animated.View
+                entering={FadeInDown.duration(240).delay(30)}
+                exiting={FadeOutUp.duration(160)}
               >
-                <TextInput
-                  value={middleName}
-                  onChangeText={setMiddleName}
-                  onFocus={() => setFocusedField('middle')}
-                  onBlur={() => setFocusedField(null)}
-                  editable={!isBusy}
-                  placeholder="Middle name (optional)"
-                  placeholderTextColor={colors.textTertiary}
-                  autoCapitalize="words"
-                  style={[styles.input, { color: colors.textPrimary, opacity: isBusy ? 0.55 : 1 }]}
-                />
-              </GlassSurface>
-            ) : null}
-
-            {mode === 'signup' ? (
-              <GlassSurface
-                radius={RADII.lg}
-                borderColor={
-                  focusedField === 'phone'
-                    ? colors.brandGoldDeep
-                    : colors.borderSpecular
-                }
-                contentStyle={styles.phoneInputRow}
-              >
-                <View
-                  style={[
-                    styles.countryPill,
-                    SQUIRCLE,
-                    { backgroundColor: colors.pill },
-                  ]}
+                <GlassSurface
+                  radius={RADII.lg}
+                  borderColor={
+                    focusedField === 'middle'
+                      ? colors.brandGoldDeep
+                      : colors.borderSpecular
+                  }
+                  contentStyle={styles.inputBox}
                 >
-                  <Text
-                    style={[styles.countryCode, { color: colors.textPrimary }]}
+                  <TextInput
+                    value={middleName}
+                    onChangeText={setMiddleName}
+                    onFocus={() => setFocusedField('middle')}
+                    onBlur={() => setFocusedField(null)}
+                    editable={!isBusy}
+                    placeholder="Middle name (optional)"
+                    placeholderTextColor={colors.textTertiary}
+                    autoCapitalize="words"
+                    style={[styles.input, { color: colors.textPrimary, opacity: isBusy ? 0.55 : 1 }]}
+                  />
+                </GlassSurface>
+              </Animated.View>
+            ) : null}
+
+            {mode === 'signup' ? (
+              <Animated.View
+                entering={FadeInDown.duration(260).delay(55)}
+                exiting={FadeOutUp.duration(160)}
+              >
+                <GlassSurface
+                  radius={RADII.lg}
+                  borderColor={
+                    focusedField === 'phone'
+                      ? colors.brandGoldDeep
+                      : colors.borderSpecular
+                  }
+                  contentStyle={styles.phoneInputRow}
+                >
+                  <View
+                    style={[
+                      styles.countryPill,
+                      SQUIRCLE,
+                      { backgroundColor: colors.pill },
+                    ]}
                   >
-                    PH +63
-                  </Text>
-                </View>
-                <TextInput
-                  value={phone}
-                  onChangeText={(txt) => setPhone(formatPhPhone(txt))}
-                  onFocus={() => setFocusedField('phone')}
-                  onBlur={() => setFocusedField(null)}
-                  editable={!isBusy}
-                  placeholder="917 482 1094"
-                  placeholderTextColor={colors.textTertiary}
-                  keyboardType="phone-pad"
-                  maxLength={12}
-                  style={[
-                    styles.input,
-                    TABULAR_NUMS,
-                    { color: colors.textPrimary, opacity: isBusy ? 0.55 : 1 },
-                  ]}
-                />
-              </GlassSurface>
+                    <Text
+                      style={[styles.countryCode, { color: colors.textPrimary }]}
+                    >
+                      PH +63
+                    </Text>
+                  </View>
+                  <TextInput
+                    value={phone}
+                    onChangeText={(txt) => setPhone(formatPhPhone(txt))}
+                    onFocus={() => setFocusedField('phone')}
+                    onBlur={() => setFocusedField(null)}
+                    editable={!isBusy}
+                    placeholder="917 482 1094"
+                    placeholderTextColor={colors.textTertiary}
+                    keyboardType="phone-pad"
+                    maxLength={12}
+                    style={[
+                      styles.input,
+                      TABULAR_NUMS,
+                      { color: colors.textPrimary, opacity: isBusy ? 0.55 : 1 },
+                    ]}
+                  />
+                </GlassSurface>
+              </Animated.View>
             ) : null}
 
             <GlassSurface
@@ -376,26 +420,33 @@ export default function LoginScreen() {
             </GlassSurface>
 
             {errorMsg ? (
-              <View
+              <Animated.View
+                entering={FadeIn.duration(180)}
+                exiting={FadeOut.duration(150)}
                 style={[
                   styles.errorBanner,
                   SQUIRCLE,
                   { backgroundColor: colors.dangerSoft },
+                  errorShakeStyle,
                 ]}
               >
                 <Ionicons name="alert-circle" size={18} color={colors.danger} />
                 <Text style={[styles.errorText, { color: colors.danger }]}>
                   {errorMsg}
                 </Text>
-              </View>
+              </Animated.View>
             ) : null}
-          </View>
+          </Animated.View>
         </View>
 
         {/* Thumb-zone CTA & Social OAuth */}
-        <View style={styles.footer}>
+        <Animated.View
+          layout={LinearTransition.springify().damping(20).stiffness(240)}
+          style={styles.footer}
+        >
           <PrimaryButton
             label={mode === 'signin' ? 'Sign In' : 'Create Account'}
+            loadingLabel={mode === 'signin' ? 'Signing in…' : 'Creating account…'}
             onPress={handleSubmit}
             loading={authLoading}
             disabled={!canSubmit || isBusy}
@@ -450,7 +501,7 @@ export default function LoginScreen() {
               </Text>
             </Pressable>
           ) : null}
-        </View>
+        </Animated.View>
       </ScrollView>
     </KeyboardAvoidingView>
   );
