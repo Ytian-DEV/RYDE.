@@ -28,13 +28,12 @@ import { useRydeStore } from '@/store/useRydeStore';
 const GlassSheetBg: React.FC<BottomSheetBackgroundProps> = ({ style }) => (
   <GlassSurface
     heavy
+    fill
+    topOnly
     radius={RADII.sheet}
-    intensity={74}
+    intensity={80}
     style={style}
-    contentStyle={StyleSheet.absoluteFill}
-  >
-    <View />
-  </GlassSurface>
+  />
 );
 
 export default function RideTiersScreen() {
@@ -365,7 +364,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   sheetOuter: {
-    marginHorizontal: 8,
+    marginHorizontal: 0,
   },
   sheetContent: {
     paddingHorizontal: 18,

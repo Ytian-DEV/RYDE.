@@ -5,7 +5,7 @@ import { RADII, SQUIRCLE } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/useAppTheme';
 
 export interface GlassSurfaceProps {
-  children: React.ReactNode;
+  children?: React.ReactNode;
   style?: StyleProp<ViewStyle>;
   contentStyle?: StyleProp<ViewStyle>;
   radius?: number;
@@ -13,6 +13,10 @@ export interface GlassSurfaceProps {
   heavy?: boolean;
   elevated?: boolean;
   borderColor?: string;
+  /** Set true when GlassSurface is used as a full-size background layer (e.g. BottomSheet backgroundComponent) */
+  fill?: boolean;
+  /** Round only the top corners (for bottom-docked sheets so no map bleeds around bottom edges) */
+  topOnly?: boolean;
 }
 
 /**
@@ -24,24 +28,43 @@ export const GlassSurface: React.FC<GlassSurfaceProps> = ({
   style,
   contentStyle,
   radius = RADII.xl,
-  intensity = 55,
+  intensity = 65,
   heavy = false,
   elevated = true,
   borderColor,
+  fill = false,
+  topOnly = false,
 }) => {
   const { colors, isDark } = useAppTheme();
   const backgroundColor = heavy ? colors.glassHeavy : colors.glass;
   const specularBorder = borderColor ?? colors.borderSpecular;
+
+  const radiusStyle: ViewStyle = topOnly
+    ? {
+        borderTopLeftRadius: radius,
+        borderTopRightRadius: radius,
+        borderBottomLeftRadius: 0,
+        borderBottomRightRadius: 0,
+      }
+    : { borderRadius: radius };
+
+  const webBlurStyle =
+    Platform.OS === 'web'
+      ? ({
+          backdropFilter: `blur(${heavy ? 32 : 24}px) saturate(180%)`,
+          WebkitBackdropFilter: `blur(${heavy ? 32 : 24}px) saturate(180%)`,
+        } as unknown as ViewStyle)
+      : undefined;
 
   return (
     <View
       style={[
         styles.outer,
         SQUIRCLE,
+        radiusStyle,
         {
-          borderRadius: radius,
           shadowColor: colors.shadowColor,
-          shadowOpacity: elevated ? (isDark ? 0.42 : 0.12) : 0,
+          shadowOpacity: elevated ? (isDark ? 0.52 : 0.16) : 0,
         },
         elevated && styles.shadow,
         style,
@@ -50,21 +73,29 @@ export const GlassSurface: React.FC<GlassSurfaceProps> = ({
       <View
         style={[
           styles.clipper,
+          fill && styles.fillClipper,
           SQUIRCLE,
+          webBlurStyle,
+          radiusStyle,
           {
-            borderRadius: radius,
             borderColor: specularBorder,
-            backgroundColor: Platform.OS === 'android' ? backgroundColor : 'transparent',
+            borderBottomWidth: topOnly ? 0 : 1,
+            backgroundColor:
+              Platform.OS === 'ios' ? 'transparent' : backgroundColor,
           },
         ]}
       >
-        <BlurView
-          intensity={Platform.OS === 'ios' ? intensity : Math.min(intensity, 35)}
-          tint={colors.blurTint}
-          experimentalBlurMethod="dimezisBlurView"
-          style={StyleSheet.absoluteFill}
-        />
+        {Platform.OS !== 'web' ? (
+          <BlurView
+            intensity={Platform.OS === 'ios' ? intensity : Math.min(intensity, 40)}
+            tint={colors.blurTint}
+            experimentalBlurMethod="dimezisBlurView"
+            style={StyleSheet.absoluteFill}
+          />
+        ) : null}
+
         <View
+          pointerEvents="none"
           style={[
             StyleSheet.absoluteFill,
             {
@@ -72,19 +103,25 @@ export const GlassSurface: React.FC<GlassSurfaceProps> = ({
             },
           ]}
         />
-        {/* Specular top rim highlight */}
+
+        {/* Specular top rim highlight for clear separation from map */}
         <View
           pointerEvents="none"
           style={[
             styles.specularHighlight,
             {
               backgroundColor: isDark
-                ? 'rgba(255, 255, 255, 0.12)'
-                : 'rgba(255, 255, 255, 0.65)',
+                ? 'rgba(255, 255, 255, 0.18)'
+                : 'rgba(255, 255, 255, 0.85)',
             },
           ]}
         />
-        <View style={contentStyle}>{children}</View>
+
+        {children ? (
+          <View style={[fill && styles.fillContent, contentStyle]}>
+            {children}
+          </View>
+        ) : null}
       </View>
     </View>
   );
@@ -95,19 +132,27 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   shadow: {
-    shadowOffset: { width: 0, height: 10 },
-    shadowRadius: 24,
-    elevation: 8,
+    shadowOffset: { width: 0, height: -4 },
+    shadowRadius: 28,
+    elevation: 14,
   },
   clipper: {
     overflow: 'hidden',
     borderWidth: 1,
   },
+  fillClipper: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
+  },
+  fillContent: {
+    flex: 1,
+  },
   specularHighlight: {
     position: 'absolute',
     top: 0,
-    left: 16,
-    right: 16,
-    height: 1,
+    left: 20,
+    right: 20,
+    height: 1.5,
   },
 });
