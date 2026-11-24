@@ -19,12 +19,15 @@ export default function SplashScreen() {
   const { colors } = useAppTheme();
   const insets = useSafeAreaInsets();
   const isAuthenticated = useRydeStore((s) => s.isAuthenticated);
+  const isLiveBackend = useRydeStore((s) => s.isLiveBackend);
+  const hydrateFromSupabase = useRydeStore((s) => s.hydrateFromSupabase);
 
   const glowScale = useSharedValue(0.92);
   const badgeOpacity = useSharedValue(0);
 
   useEffect(() => {
-    badgeOpacity.value = withTiming(1, { duration: 500 });
+    let active = true;
+    badgeOpacity.value = withTiming(1, { duration: 480 });
     glowScale.value = withRepeat(
       withSequence(
         withTiming(1.12, { duration: 1100, easing: Easing.inOut(Easing.ease) }),
@@ -34,16 +37,26 @@ export default function SplashScreen() {
       true
     );
 
-    const timer = setTimeout(() => {
-      if (isAuthenticated) {
+    const boot = async () => {
+      const [hasSession] = await Promise.all([
+        hydrateFromSupabase(),
+        new Promise((r) => setTimeout(r, 950)),
+      ]);
+      if (!active) return;
+      if (hasSession || isAuthenticated) {
         router.replace('/(tabs)');
       } else {
         router.replace('/(auth)/login');
       }
-    }, 1250);
+    };
+    boot().catch(() => {
+      if (active) router.replace('/(auth)/login');
+    });
 
-    return () => clearTimeout(timer);
-  }, [badgeOpacity, glowScale, isAuthenticated]);
+    return () => {
+      active = false;
+    };
+  }, [badgeOpacity, glowScale, hydrateFromSupabase, isAuthenticated]);
 
   const glowStyle = useAnimatedStyle(() => ({
     transform: [{ scale: glowScale.value }],
@@ -78,10 +91,19 @@ export default function SplashScreen() {
       >
         <GlassSurface radius={RADII.pill} contentStyle={styles.footerPill}>
           <View
-            style={[styles.liveDot, { backgroundColor: colors.success }]}
+            style={[
+              styles.liveDot,
+              {
+                backgroundColor: isLiveBackend
+                  ? colors.success
+                  : colors.brandGoldDeep,
+              },
+            ]}
           />
           <Text style={[styles.footerText, { color: colors.textSecondary }]}>
-            Connecting to Baybay riders…
+            {isLiveBackend
+              ? 'Connected to Supabase Realtime…'
+              : 'Connecting to Baybay riders…'}
           </Text>
         </GlassSurface>
       </View>
