@@ -1,12 +1,27 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GlassSurface } from '@/components/ui/GlassSurface';
 import { RADII, SQUIRCLE } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/useAppTheme';
+
+export interface FloatingTabBarProps {
+  state: {
+    index: number;
+    routes: ReadonlyArray<{ key: string; name: string }>;
+  };
+  navigateToTab?: (routeKey: string) => void;
+  navigation?: {
+    emit: (event: {
+      type: 'tabPress';
+      target: string;
+      canPreventDefault: boolean;
+    }) => { defaultPrevented?: boolean };
+    navigate: (name: string) => void;
+  };
+}
 
 const TAB_META: Record<
   string,
@@ -25,8 +40,9 @@ const TAB_META: Record<
 /**
  * iOS 26 Floating Liquid Glass Capsule Tab Bar.
  */
-export const FloatingTabBar: React.FC<BottomTabBarProps> = ({
+export const FloatingTabBar: React.FC<FloatingTabBarProps> = ({
   state,
+  navigateToTab,
   navigation,
 }) => {
   const { colors } = useAppTheme();
@@ -54,13 +70,21 @@ export const FloatingTabBar: React.FC<BottomTabBarProps> = ({
 
           const handlePress = () => {
             Haptics.selectionAsync().catch(() => {});
-            const event = navigation.emit({
-              type: 'tabPress',
-              target: route.key,
-              canPreventDefault: true,
-            });
-            if (!isFocused && !event.defaultPrevented) {
-              navigation.navigate(route.name);
+            if (navigateToTab) {
+              if (!isFocused) {
+                navigateToTab(route.key);
+              }
+              return;
+            }
+            if (navigation) {
+              const event = navigation.emit({
+                type: 'tabPress',
+                target: route.key,
+                canPreventDefault: true,
+              });
+              if (!isFocused && !event.defaultPrevented) {
+                navigation.navigate(route.name);
+              }
             }
           };
 

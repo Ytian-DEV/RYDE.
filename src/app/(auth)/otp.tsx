@@ -25,7 +25,7 @@ export default function OtpScreen() {
 
   const [code, setCode] = useState('4829');
   const [secondsLeft, setSecondsLeft] = useState(45);
-  const inputRef = useRef<TextInput>(null);
+  const inputRef = useRef<React.ComponentRef<typeof TextInput>>(null);
 
   useEffect(() => {
     if (secondsLeft <= 0) return;
