@@ -1,3 +1,4 @@
+import { haversineKm } from '@/services/geoService';
 import {
   DriverProfile,
   EmergencyContact,
@@ -9,6 +10,7 @@ import {
   TripRecord,
 } from '@/types';
 
+/** Real GPS coordinates for Baybay City & Visayas State University (VSU), Leyte */
 export const BAYBAY_PLACES: PlaceLocation[] = [
   {
     id: 'loc-utod',
@@ -17,6 +19,8 @@ export const BAYBAY_PLACES: PlaceLocation[] = [
     distanceKm: 0.4,
     etaMinutes: 2,
     category: 'store',
+    lat: 10.7285,
+    lng: 124.7986,
     mapX: 0.28,
     mapY: 0.62,
   },
@@ -27,6 +31,8 @@ export const BAYBAY_PLACES: PlaceLocation[] = [
     distanceKm: 3.4,
     etaMinutes: 8,
     category: 'campus',
+    lat: 10.7468,
+    lng: 124.7948,
     mapX: 0.68,
     mapY: 0.28,
   },
@@ -37,6 +43,8 @@ export const BAYBAY_PLACES: PlaceLocation[] = [
     distanceKm: 2.8,
     etaMinutes: 6,
     category: 'landmark',
+    lat: 10.7432,
+    lng: 124.7912,
     mapX: 0.22,
     mapY: 0.41,
   },
@@ -47,6 +55,8 @@ export const BAYBAY_PLACES: PlaceLocation[] = [
     distanceKm: 1.5,
     etaMinutes: 4,
     category: 'home',
+    lat: 10.7336,
+    lng: 124.8018,
     mapX: 0.54,
     mapY: 0.58,
   },
@@ -57,6 +67,8 @@ export const BAYBAY_PLACES: PlaceLocation[] = [
     distanceKm: 1.9,
     etaMinutes: 5,
     category: 'store',
+    lat: 10.7391,
+    lng: 124.7964,
     mapX: 0.45,
     mapY: 0.46,
   },
@@ -67,6 +79,8 @@ export const BAYBAY_PLACES: PlaceLocation[] = [
     distanceKm: 6.2,
     etaMinutes: 14,
     category: 'landmark',
+    lat: 10.6788,
+    lng: 124.8012,
     mapX: 0.80,
     mapY: 0.74,
   },
@@ -77,6 +91,8 @@ export const BAYBAY_PLACES: PlaceLocation[] = [
     distanceKm: 5.8,
     etaMinutes: 12,
     category: 'landmark',
+    lat: 10.6772,
+    lng: 124.7988,
     mapX: 0.18,
     mapY: 0.76,
   },
@@ -162,8 +178,8 @@ export const PAYMENT_METHODS: PaymentMethod[] = [
   {
     id: 'gcash',
     label: 'GCash',
-    subtitle: 'Instant e-wallet • 0917 ••• 4821',
-    shortLabel: 'GCash ••4821',
+    subtitle: 'Instant e-wallet • Reference tracked',
+    shortLabel: 'GCash',
     icon: 'phone-portrait-outline',
   },
   {
@@ -182,9 +198,9 @@ export const PAYMENT_METHODS: PaymentMethod[] = [
   },
   {
     id: 'apple_pay',
-    label: 'Apple Pay / Card',
-    subtitle: 'Visa •••• 9012',
-    shortLabel: 'Visa ••9012',
+    label: 'Ryde Wallet / Card',
+    subtitle: 'Pay from your Ryde Wallet balance',
+    shortLabel: 'Ryde Wallet',
     icon: 'card-outline',
   },
 ];
@@ -267,44 +283,6 @@ export const INITIAL_TRIPS: TripRecord[] = [
     status: 'Completed',
     ratingGiven: 5,
   },
-  {
-    id: 'trip-103',
-    category: 'taxi',
-    pickup: BAYBAY_PLACES[0]!,
-    destination: BAYBAY_PLACES[2]!,
-    tierName: 'Ryde Economy',
-    driver: SAMPLE_DRIVERS[2]!,
-    paymentMethod: 'gcash',
-    baseFare: 40,
-    distanceFare: 18,
-    bookingFee: 0,
-    tipAmount: 20,
-    totalFare: 58,
-    distanceKm: 2.6,
-    durationMin: 7,
-    dateLabel: 'Nov 21, 9:10 AM',
-    status: 'Completed',
-    ratingGiven: 5,
-  },
-  {
-    id: 'trip-104',
-    category: 'food',
-    pickup: BAYBAY_PLACES[4]!,
-    destination: BAYBAY_PLACES[3]!,
-    tierName: 'Ryde Food Express',
-    driver: SAMPLE_DRIVERS[1]!,
-    paymentMethod: 'gcash',
-    baseFare: 15,
-    distanceFare: 170,
-    bookingFee: 0,
-    tipAmount: 15,
-    totalFare: 185,
-    distanceKm: 1.9,
-    durationMin: 18,
-    dateLabel: 'Nov 19, 7:22 PM',
-    status: 'Delivered',
-    ratingGiven: 5,
-  },
 ];
 
 export const INITIAL_PROMOS: PromoCode[] = [
@@ -318,7 +296,7 @@ export const INITIAL_PROMOS: PromoCode[] = [
   {
     id: 'promo-2',
     code: 'RYDE26',
-    title: '15% off Ryde Comfort & XL',
+    title: '₱15 off Ryde Economy, Comfort & XL',
     discountAmount: 15,
     expiry: 'Valid until Dec 15, 2026',
   },
@@ -343,22 +321,30 @@ export function calculateTierFare(
   tier: RideTier,
   pickup: PlaceLocation,
   destination: PlaceLocation,
-  promoDiscount = 0
+  promoDiscount = 0,
+  overrideDistanceKm?: number
 ): { baseFare: number; distanceFare: number; distanceKm: number; totalFare: number } {
-  const dx = (destination.mapX - pickup.mapX) * 8.5;
-  const dy = (destination.mapY - pickup.mapY) * 8.5;
-  const computedKm = Math.max(1.2, Number(Math.hypot(dx, dy).toFixed(1)));
-  // Keep 7/11 Utod -> DCST VSU exact to Figma reference (3.4 km, ₱64.00 for Economy)
-  const isDefaultRoute =
-    pickup.id === 'loc-utod' && destination.id === 'loc-dcst';
-  const distanceKm = isDefaultRoute ? 3.4 : computedKm;
-  const distanceFare = Math.round(distanceKm * tier.perKmRate);
+  const realKm =
+    typeof overrideDistanceKm === 'number' && overrideDistanceKm > 0
+      ? overrideDistanceKm
+      : Math.max(
+          0.8,
+          Number(
+            (
+              haversineKm(
+                { lat: pickup.lat, lng: pickup.lng },
+                { lat: destination.lat, lng: destination.lng }
+              ) * 1.25
+            ).toFixed(1)
+          )
+        );
+  const distanceFare = Math.round(realKm * tier.perKmRate);
   const rawTotal = tier.baseFare + distanceFare;
   const totalFare = Math.max(tier.baseFare, rawTotal - promoDiscount);
   return {
     baseFare: tier.baseFare,
     distanceFare,
-    distanceKm,
+    distanceKm: realKm,
     totalFare,
   };
 }

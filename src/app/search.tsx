@@ -72,6 +72,8 @@ export default function SearchLocationScreen() {
       address: `Pinned location (${(10.74 + mapY * 0.02).toFixed(4)}, ${(124.79 + mapX * 0.02).toFixed(4)})`,
       distanceKm: 2.6,
       etaMinutes: 6,
+      lat: 10.72 + mapY * 0.04,
+      lng: 124.78 + mapX * 0.03,
       mapX,
       mapY,
     };
