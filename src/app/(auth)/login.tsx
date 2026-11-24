@@ -28,24 +28,64 @@ function formatPhPhone(raw: string): string {
 export default function LoginScreen() {
   const { colors } = useAppTheme();
   const insets = useSafeAreaInsets();
-  const storedPhone = useRydeStore((s) => s.pendingPhone);
-  const setPendingPhone = useRydeStore((s) => s.setPendingPhone);
+  const isLiveBackend = useRydeStore((s) => s.isLiveBackend);
+  const authLoading = useRydeStore((s) => s.authLoading);
+  const signInWithEmail = useRydeStore((s) => s.signInWithEmail);
+  const signUpWithEmail = useRydeStore((s) => s.signUpWithEmail);
   const quickDemoSignIn = useRydeStore((s) => s.quickDemoSignIn);
 
-  const [phone, setPhone] = useState(storedPhone);
-  const [focused, setFocused] = useState(false);
+  const [mode, setMode] = useState<'signin' | 'signup'>('signin');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [phone, setPhone] = useState('917 482 1094');
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [focusedField, setFocusedField] = useState<string | null>(null);
 
-  const cleanDigits = phone.replace(/\D/g, '');
-  const isValid = cleanDigits.length === 10;
+  const isValidEmail = email.trim().includes('@') && email.trim().includes('.');
+  const isValidPassword = password.length >= 6;
+  const canSubmit =
+    mode === 'signin'
+      ? isValidEmail && isValidPassword
+      : isValidEmail &&
+        isValidPassword &&
+        firstName.trim().length > 0 &&
+        lastName.trim().length > 0 &&
+        phone.replace(/\D/g, '').length === 10;
 
-  const handleProceed = () => {
-    if (!isValid) return;
-    setPendingPhone(phone);
-    router.push('/(auth)/otp');
+  const handleSubmit = async () => {
+    setErrorMsg(null);
+    if (!canSubmit) {
+      setErrorMsg('Please fill in all required fields (password min. 6 chars).');
+      return;
+    }
+
+    const err =
+      mode === 'signin'
+        ? await signInWithEmail(email, password)
+        : await signUpWithEmail({
+            email,
+            password,
+            firstName,
+            middleName: '',
+            lastName,
+            phone,
+          });
+
+    if (err) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
+      setErrorMsg(err);
+      return;
+    }
+
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    router.replace('/(tabs)');
   };
 
-  const handleSocialDemo = () => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+  const handlePreviewMode = () => {
+    Haptics.selectionAsync().catch(() => {});
     quickDemoSignIn();
     router.replace('/(tabs)');
   };
@@ -59,131 +99,281 @@ export default function LoginScreen() {
         contentContainerStyle={[
           styles.scroll,
           {
-            paddingTop: Math.max(insets.top, 20) + 28,
-            paddingBottom: Math.max(insets.bottom, 20) + 20,
+            paddingTop: Math.max(insets.top, 20) + 20,
+            paddingBottom: Math.max(insets.bottom, 20) + 24,
           },
         ]}
         keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
       >
         <View style={styles.topSection}>
-          <BrandBadge size={64} fontSize={20} />
+          <View style={styles.brandRow}>
+            <BrandBadge size={60} fontSize={19} />
+            <GlassSurface radius={RADII.pill} contentStyle={styles.statusChip}>
+              <View
+                style={[
+                  styles.statusDot,
+                  {
+                    backgroundColor: isLiveBackend
+                      ? colors.success
+                      : colors.brandGoldDeep,
+                  },
+                ]}
+              />
+              <Text
+                style={[styles.statusText, { color: colors.textSecondary }]}
+              >
+                {isLiveBackend ? 'Supabase Live' : 'Local Preview'}
+              </Text>
+            </GlassSurface>
+          </View>
 
           <View style={styles.headingGroup}>
             <Text style={[TYPOGRAPHY.largeTitle, { color: colors.textPrimary }]}>
-              Welcome to Ryde.
+              {mode === 'signin' ? 'Welcome back.' : 'Create your account.'}
             </Text>
             <Text style={[TYPOGRAPHY.body, { color: colors.textSecondary }]}>
-              Enter your Philippine mobile number to sign in or create your
-              account in seconds.
+              {mode === 'signin'
+                ? 'Sign in with your email and password to access your live trips and Ryde Wallet.'
+                : 'Sign up with email and your Philippine mobile number to ride or drive with Ryde.'}
             </Text>
           </View>
 
-          <GlassSurface
-            radius={RADII.lg}
-            borderColor={focused ? colors.brandGoldDeep : colors.borderSpecular}
-            contentStyle={styles.phoneInputRow}
+          {/* Segmented iOS 26 Mode Switcher */}
+          <View
+            style={[
+              styles.segmentTrack,
+              SQUIRCLE,
+              { backgroundColor: colors.pill },
+            ]}
           >
-            <View
-              style={[
-                styles.countryPill,
-                SQUIRCLE,
-                { backgroundColor: colors.pill },
-              ]}
+            {(['signin', 'signup'] as const).map((m) => {
+              const active = mode === m;
+              return (
+                <Pressable
+                  key={m}
+                  onPress={() => {
+                    Haptics.selectionAsync().catch(() => {});
+                    setMode(m);
+                    setErrorMsg(null);
+                  }}
+                  style={[
+                    styles.segmentBtn,
+                    SQUIRCLE,
+                    active && { backgroundColor: colors.brandGold },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.segmentText,
+                      {
+                        color: active
+                          ? colors.textOnGold
+                          : colors.textSecondary,
+                      },
+                    ]}
+                  >
+                    {m === 'signin' ? 'Sign In' : 'Create Account'}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          {/* Form Fields */}
+          <View style={styles.form}>
+            {mode === 'signup' ? (
+              <View style={styles.nameRow}>
+                <GlassSurface
+                  radius={RADII.lg}
+                  borderColor={
+                    focusedField === 'first'
+                      ? colors.brandGoldDeep
+                      : colors.borderSpecular
+                  }
+                  style={styles.flexHalf}
+                  contentStyle={styles.inputBox}
+                >
+                  <TextInput
+                    value={firstName}
+                    onChangeText={setFirstName}
+                    onFocus={() => setFocusedField('first')}
+                    onBlur={() => setFocusedField(null)}
+                    placeholder="First name"
+                    placeholderTextColor={colors.textTertiary}
+                    autoCapitalize="words"
+                    style={[styles.input, { color: colors.textPrimary }]}
+                  />
+                </GlassSurface>
+
+                <GlassSurface
+                  radius={RADII.lg}
+                  borderColor={
+                    focusedField === 'last'
+                      ? colors.brandGoldDeep
+                      : colors.borderSpecular
+                  }
+                  style={styles.flexHalf}
+                  contentStyle={styles.inputBox}
+                >
+                  <TextInput
+                    value={lastName}
+                    onChangeText={setLastName}
+                    onFocus={() => setFocusedField('last')}
+                    onBlur={() => setFocusedField(null)}
+                    placeholder="Last name"
+                    placeholderTextColor={colors.textTertiary}
+                    autoCapitalize="words"
+                    style={[styles.input, { color: colors.textPrimary }]}
+                  />
+                </GlassSurface>
+              </View>
+            ) : null}
+
+            {mode === 'signup' ? (
+              <GlassSurface
+                radius={RADII.lg}
+                borderColor={
+                  focusedField === 'phone'
+                    ? colors.brandGoldDeep
+                    : colors.borderSpecular
+                }
+                contentStyle={styles.phoneInputRow}
+              >
+                <View
+                  style={[
+                    styles.countryPill,
+                    SQUIRCLE,
+                    { backgroundColor: colors.pill },
+                  ]}
+                >
+                  <Text
+                    style={[styles.countryCode, { color: colors.textPrimary }]}
+                  >
+                    PH +63
+                  </Text>
+                </View>
+                <TextInput
+                  value={phone}
+                  onChangeText={(txt) => setPhone(formatPhPhone(txt))}
+                  onFocus={() => setFocusedField('phone')}
+                  onBlur={() => setFocusedField(null)}
+                  placeholder="917 482 1094"
+                  placeholderTextColor={colors.textTertiary}
+                  keyboardType="phone-pad"
+                  maxLength={12}
+                  style={[
+                    styles.input,
+                    TABULAR_NUMS,
+                    { color: colors.textPrimary },
+                  ]}
+                />
+              </GlassSurface>
+            ) : null}
+
+            <GlassSurface
+              radius={RADII.lg}
+              borderColor={
+                focusedField === 'email'
+                  ? colors.brandGoldDeep
+                  : colors.borderSpecular
+              }
+              contentStyle={styles.iconInputRow}
             >
-              <Text style={[styles.countryCode, { color: colors.textPrimary }]}>
-                PH +63
-              </Text>
-            </View>
-            <TextInput
-              value={phone}
-              onChangeText={(txt) => setPhone(formatPhPhone(txt))}
-              onFocus={() => setFocused(true)}
-              onBlur={() => setFocused(false)}
-              placeholder="917 482 1094"
-              placeholderTextColor={colors.textTertiary}
-              keyboardType="phone-pad"
-              maxLength={12}
-              style={[
-                styles.phoneInput,
-                TABULAR_NUMS,
-                { color: colors.textPrimary },
-              ]}
-              accessibilityLabel="Philippine mobile number"
-            />
-            {phone.length > 0 ? (
+              <Ionicons
+                name="mail-outline"
+                size={19}
+                color={colors.textSecondary}
+              />
+              <TextInput
+                value={email}
+                onChangeText={setEmail}
+                onFocus={() => setFocusedField('email')}
+                onBlur={() => setFocusedField(null)}
+                placeholder="Email address"
+                placeholderTextColor={colors.textTertiary}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+                style={[styles.input, { color: colors.textPrimary }]}
+              />
+            </GlassSurface>
+
+            <GlassSurface
+              radius={RADII.lg}
+              borderColor={
+                focusedField === 'password'
+                  ? colors.brandGoldDeep
+                  : colors.borderSpecular
+              }
+              contentStyle={styles.iconInputRow}
+            >
+              <Ionicons
+                name="lock-closed-outline"
+                size={19}
+                color={colors.textSecondary}
+              />
+              <TextInput
+                value={password}
+                onChangeText={setPassword}
+                onFocus={() => setFocusedField('password')}
+                onBlur={() => setFocusedField(null)}
+                placeholder="Password (min. 6 characters)"
+                placeholderTextColor={colors.textTertiary}
+                secureTextEntry={!showPassword}
+                autoCapitalize="none"
+                style={[styles.input, { color: colors.textPrimary }]}
+              />
               <Pressable
-                onPress={() => setPhone('')}
+                onPress={() => setShowPassword((v) => !v)}
                 hitSlop={10}
-                accessibilityLabel="Clear phone number"
+                accessibilityLabel="Toggle password visibility"
               >
                 <Ionicons
-                  name="close-circle"
-                  size={20}
-                  color={colors.textTertiary}
+                  name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                  size={19}
+                  color={colors.textSecondary}
                 />
               </Pressable>
+            </GlassSurface>
+
+            {errorMsg ? (
+              <View
+                style={[
+                  styles.errorBanner,
+                  SQUIRCLE,
+                  { backgroundColor: colors.dangerSoft },
+                ]}
+              >
+                <Ionicons name="alert-circle" size={18} color={colors.danger} />
+                <Text style={[styles.errorText, { color: colors.danger }]}>
+                  {errorMsg}
+                </Text>
+              </View>
             ) : null}
-          </GlassSurface>
-
-          <View style={styles.dividerRow}>
-            <View
-              style={[
-                styles.dividerLine,
-                { backgroundColor: colors.borderSubtle },
-              ]}
-            />
-            <Text style={[styles.dividerLabel, { color: colors.textTertiary }]}>
-              or continue instantly
-            </Text>
-            <View
-              style={[
-                styles.dividerLine,
-                { backgroundColor: colors.borderSubtle },
-              ]}
-            />
-          </View>
-
-          <View style={styles.socialRow}>
-            <Pressable
-              onPress={handleSocialDemo}
-              style={styles.socialFlex}
-              accessibilityRole="button"
-              accessibilityLabel="Continue with Apple"
-            >
-              <GlassSurface radius={RADII.pill} contentStyle={styles.socialBtn}>
-                <Ionicons name="logo-apple" size={18} color={colors.textPrimary} />
-                <Text style={[styles.socialText, { color: colors.textPrimary }]}>
-                  Apple
-                </Text>
-              </GlassSurface>
-            </Pressable>
-
-            <Pressable
-              onPress={handleSocialDemo}
-              style={styles.socialFlex}
-              accessibilityRole="button"
-              accessibilityLabel="Continue with Google"
-            >
-              <GlassSurface radius={RADII.pill} contentStyle={styles.socialBtn}>
-                <Ionicons name="logo-google" size={17} color={colors.textPrimary} />
-                <Text style={[styles.socialText, { color: colors.textPrimary }]}>
-                  Google
-                </Text>
-              </GlassSurface>
-            </Pressable>
           </View>
         </View>
 
         {/* Thumb-zone CTA */}
         <View style={styles.footer}>
-          <Text style={[styles.terms, { color: colors.textTertiary }]}>
-            By continuing, you accept Ryde.’s Terms of Service and Privacy Policy.
-          </Text>
           <PrimaryButton
-            label="Continue"
-            onPress={handleProceed}
-            disabled={!isValid}
+            label={mode === 'signin' ? 'Sign In' : 'Create Account'}
+            onPress={handleSubmit}
+            loading={authLoading}
+            disabled={!canSubmit}
           />
+
+          {!isLiveBackend ? (
+            <Pressable
+              onPress={handlePreviewMode}
+              style={styles.guestBtn}
+              accessibilityRole="button"
+            >
+              <Text style={[styles.guestText, { color: colors.textSecondary }]}>
+                Continue in Local Preview (add `.env` to enable live Supabase)
+              </Text>
+            </Pressable>
+          ) : null}
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -198,73 +388,120 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     paddingHorizontal: 24,
     justifyContent: 'space-between',
-  },
-  topSection: {
     gap: 24,
   },
+  topSection: {
+    gap: 20,
+  },
+  brandRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  statusChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  statusText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
   headingGroup: {
-    gap: 8,
+    gap: 6,
+  },
+  segmentTrack: {
+    flexDirection: 'row',
+    padding: 4,
+    borderRadius: 18,
+    gap: 4,
+  },
+  segmentBtn: {
+    flex: 1,
+    height: 40,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  segmentText: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  form: {
+    gap: 12,
+  },
+  nameRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  flexHalf: {
+    flex: 1,
+  },
+  inputBox: {
+    height: 56,
+    paddingHorizontal: 16,
+    justifyContent: 'center',
   },
   phoneInputRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 14,
-    height: 62,
-    gap: 12,
+    paddingHorizontal: 12,
+    height: 58,
+    gap: 10,
+  },
+  iconInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    height: 58,
+    gap: 10,
   },
   countryPill: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 14,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 12,
   },
   countryCode: {
-    fontSize: 15,
-    fontWeight: '600',
+    fontSize: 14,
+    fontWeight: '700',
   },
-  phoneInput: {
+  input: {
     flex: 1,
-    fontSize: 18,
-    fontWeight: '600',
+    fontSize: 16,
+    fontWeight: '500',
     height: '100%',
   },
-  dividerRow: {
+  errorBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-  },
-  dividerLabel: {
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  socialRow: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  socialFlex: {
-    flex: 1,
-  },
-  socialBtn: {
-    height: 50,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
     gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    borderRadius: 16,
   },
-  socialText: {
-    fontSize: 15,
-    fontWeight: '600',
+  errorText: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '500',
+    lineHeight: 18,
   },
   footer: {
-    gap: 14,
-    paddingTop: 24,
+    gap: 12,
   },
-  terms: {
-    fontSize: 12,
+  guestBtn: {
+    alignItems: 'center',
+    paddingVertical: 10,
+  },
+  guestText: {
+    fontSize: 13,
+    fontWeight: '600',
     textAlign: 'center',
-    lineHeight: 17,
   },
 });
