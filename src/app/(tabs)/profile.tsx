@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   Modal,
   Pressable,
@@ -14,7 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PaymentScheduleSheet } from '@/components/sheets/PaymentScheduleSheet';
-import { GlassSurface, PrimaryButton } from '@/components/ui';
+import { GlassSurface, PrimaryButton, SkeletonBox } from '@/components/ui';
 import {
   formatPeso,
   RADII,
@@ -37,6 +38,7 @@ export default function ProfileScreen() {
   const { colors, isDark } = useAppTheme();
   const insets = useSafeAreaInsets();
 
+  const hydrating = useRydeStore((s) => s.hydrating);
   const user = useRydeStore((s) => s.user);
   const driverVehicle = useRydeStore((s) => s.driverVehicle);
   const themeMode = useRydeStore((s) => s.themeMode);
@@ -59,6 +61,9 @@ export default function ProfileScreen() {
   const [newContactName, setNewContactName] = useState('');
   const [newContactRelation, setNewContactRelation] = useState('');
   const [newContactPhone, setNewContactPhone] = useState('');
+  const [topUpBusy, setTopUpBusy] = useState(false);
+  const [contactBusy, setContactBusy] = useState(false);
+  const [signOutBusy, setSignOutBusy] = useState(false);
 
   const first = (user.firstName ?? '').trim();
   const middle = (user.middleName ?? '').trim();
@@ -82,26 +87,34 @@ export default function ProfileScreen() {
   ].filter(Boolean);
 
   const handleSignOut = async () => {
+    if (signOutBusy) return;
+    setSignOutBusy(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
     await signOut();
+    setSignOutBusy(false);
     router.replace('/(auth)/login');
   };
 
   const handleTopUp = async (amt: number) => {
+    if (topUpBusy) return;
+    setTopUpBusy(true);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
     await topUpWallet(amt, topUpMethod, topUpRef.trim() || null);
+    setTopUpBusy(false);
     setTopUpRef('');
     setTopUpOpen(false);
   };
 
   const handleAddContact = async () => {
-    if (!newContactName.trim() || !newContactPhone.trim()) return;
+    if (!newContactName.trim() || !newContactPhone.trim() || contactBusy) return;
+    setContactBusy(true);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
     await addEmergencyContact({
       name: newContactName.trim(),
       relation: newContactRelation.trim() || 'Family',
       phone: newContactPhone.trim(),
     });
+    setContactBusy(false);
     setNewContactName('');
     setNewContactRelation('');
     setNewContactPhone('');
@@ -126,6 +139,18 @@ export default function ProfileScreen() {
         </View>
 
         {/* User Hero Liquid Glass Card */}
+        {hydrating && !user.id ? (
+          <GlassSurface radius={RADII.xl} contentStyle={styles.heroCard}>
+            <View style={styles.heroLeft}>
+              <SkeletonBox width={54} height={54} radius={27} />
+              <View style={[styles.heroMeta, { gap: 8 }]}>
+                <SkeletonBox width={150} height={18} radius={8} />
+                <SkeletonBox width={115} height={13} radius={6} />
+              </View>
+            </View>
+            <SkeletonBox width={68} height={28} radius={12} />
+          </GlassSurface>
+        ) : (
         <GlassSurface radius={RADII.xl} contentStyle={styles.heroCard}>
           <View style={styles.heroLeft}>
             <View
@@ -172,6 +197,7 @@ export default function ProfileScreen() {
             </Text>
           </View>
         </GlassSurface>
+        )}
 
         {/* Switch to Driver Mode CTA Card */}
         <Pressable
@@ -436,7 +462,9 @@ export default function ProfileScreen() {
 
         <PrimaryButton
           label="Sign Out"
+          loadingLabel="Signing out…"
           variant="danger"
+          loading={signOutBusy}
           onPress={handleSignOut}
         />
       </ScrollView>
@@ -519,22 +547,30 @@ export default function ProfileScreen() {
                 {TOP_UP_AMOUNTS.map((amt) => (
                   <Pressable
                     key={amt}
+                    disabled={topUpBusy}
                     onPress={() => handleTopUp(amt)}
                     style={[
                       styles.amountTile,
                       SQUIRCLE,
-                      { backgroundColor: colors.brandGoldSoft },
+                      {
+                        backgroundColor: colors.brandGoldSoft,
+                        opacity: topUpBusy ? 0.55 : 1,
+                      },
                     ]}
                   >
-                    <Text
-                      style={[
-                        styles.amountText,
-                        TABULAR_NUMS,
-                        { color: colors.textPrimary },
-                      ]}
-                    >
-                      +₱{amt}
-                    </Text>
+                    {topUpBusy ? (
+                      <ActivityIndicator size="small" color={colors.textPrimary} />
+                    ) : (
+                      <Text
+                        style={[
+                          styles.amountText,
+                          TABULAR_NUMS,
+                          { color: colors.textPrimary },
+                        ]}
+                      >
+                        +₱{amt}
+                      </Text>
+                    )}
                   </Pressable>
                 ))}
               </View>
@@ -827,6 +863,8 @@ export default function ProfileScreen() {
 
               <PrimaryButton
                 label="Add Trusted Contact"
+                loadingLabel="Saving contact…"
+                loading={contactBusy}
                 disabled={!newContactName.trim() || !newContactPhone.trim()}
                 onPress={handleAddContact}
               />
