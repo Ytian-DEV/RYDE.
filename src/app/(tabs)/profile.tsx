@@ -61,17 +61,19 @@ export default function ProfileScreen() {
   const [newContactRelation, setNewContactRelation] = useState('');
   const [newContactPhone, setNewContactPhone] = useState('');
 
+  const first = (user.firstName ?? '').trim();
+  const middle = (user.middleName ?? '').trim();
+  const last = (user.lastName ?? '').trim();
+  const emailTrimmed = (user.email ?? '').trim();
+
   const fullName =
-    [user.firstName, user.middleName, user.lastName]
-      .map((s) => s.trim())
-      .filter(Boolean)
-      .join(' ') ||
-    user.email ||
+    [first, middle, last].filter(Boolean).join(' ') ||
+    emailTrimmed ||
     'Ryde Rider';
 
   const initials =
-    `${user.firstName.trim().charAt(0)}${user.lastName.trim().charAt(0) || user.firstName.trim().charAt(1)}`.toUpperCase() ||
-    (user.email.trim().charAt(0).toUpperCase() || 'RY');
+    `${first.charAt(0)}${last.charAt(0) || first.charAt(1)}`.toUpperCase() ||
+    (emailTrimmed.charAt(0).toUpperCase() || 'RY');
 
   const subtitleParts = [
     user.phone || user.email,

@@ -253,9 +253,8 @@ export const useRydeStore = create<RydeState>((set, get) => ({
   hydrateFromSupabase: async () => {
     if (!supabase) return false;
     try {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
+      const sessionRes = await supabase.auth.getSession();
+      const session = sessionRes?.data?.session ?? null;
 
       if (!session?.user) {
         get().resetUserState();
