@@ -1,7 +1,9 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
+  ActivityIndicator,
   FlatList,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -20,6 +22,7 @@ import {
 import { RADII, SQUIRCLE, TABULAR_NUMS } from '@/constants/theme';
 import { BAYBAY_PLACES } from '@/data/mockData';
 import { useAppTheme } from '@/hooks/useAppTheme';
+import { reverseGeocodeOSM, searchPlacesOSM } from '@/services/geoService';
 import { useRydeStore } from '@/store/useRydeStore';
 import { PlaceLocation } from '@/types';
 
@@ -32,22 +35,66 @@ export default function SearchLocationScreen() {
   const setPickup = useRydeStore((s) => s.setPickup);
   const setDestination = useRydeStore((s) => s.setDestination);
   const swapStops = useRydeStore((s) => s.swapStops);
+  const locateUserGps = useRydeStore((s) => s.locateUserGps);
+  const loadingGps = useRydeStore((s) => s.loadingGps);
 
   const [activeField, setActiveField] = useState<'pickup' | 'destination'>(
     'destination'
   );
   const [query, setQuery] = useState('');
+  const [osmResults, setOsmResults] = useState<PlaceLocation[]>([]);
+  const [searchingOsm, setSearchingOsm] = useState(false);
   const [pinMode, setPinMode] = useState(false);
+  const [resolvingPin, setResolvingPin] = useState(false);
 
-  const filteredPlaces = useMemo(() => {
+  // Debounced live OpenStreetMap Nominatim place search
+  useEffect(() => {
+    const trimmed = query.trim();
+    if (trimmed.length < 2) {
+      setOsmResults([]);
+      setSearchingOsm(false);
+      return;
+    }
+
+    let cancelled = false;
+    setSearchingOsm(true);
+    const timer = setTimeout(async () => {
+      const results = await searchPlacesOSM(trimmed, {
+        lat: pickup.lat,
+        lng: pickup.lng,
+      });
+      if (!cancelled) {
+        setOsmResults(results);
+        setSearchingOsm(false);
+      }
+    }, 360);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [query, pickup.lat, pickup.lng]);
+
+  const combinedPlaces = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return BAYBAY_PLACES;
-    return BAYBAY_PLACES.filter(
-      (p) =>
-        p.name.toLowerCase().includes(q) ||
-        p.address.toLowerCase().includes(q)
-    );
-  }, [query]);
+    const localMatches = q
+      ? BAYBAY_PLACES.filter(
+          (p) =>
+            p.name.toLowerCase().includes(q) ||
+            p.address.toLowerCase().includes(q)
+        )
+      : BAYBAY_PLACES;
+
+    const seen = new Set(localMatches.map((p) => p.name.toLowerCase()));
+    const merged = [...localMatches];
+    for (const item of osmResults) {
+      if (!seen.has(item.name.toLowerCase())) {
+        merged.push(item);
+        seen.add(item.name.toLowerCase());
+      }
+    }
+    return merged;
+  }, [query, osmResults]);
 
   const handleSelectPlace = (place: PlaceLocation) => {
     Haptics.selectionAsync().catch(() => {});
@@ -61,33 +108,33 @@ export default function SearchLocationScreen() {
     }
   };
 
-  const handleMapPin = (mapX: number, mapY: number) => {
+  const handleMapPin = async (lat: number, lng: number) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-    const customPin: PlaceLocation = {
-      id: `pin-${Date.now()}`,
-      name:
-        activeField === 'pickup'
-          ? 'Pinned Pickup, Baybay'
-          : 'Pinned Destination, VSU',
-      address: `Pinned location (${(10.74 + mapY * 0.02).toFixed(4)}, ${(124.79 + mapX * 0.02).toFixed(4)})`,
-      distanceKm: 2.6,
-      etaMinutes: 6,
-      lat: 10.72 + mapY * 0.04,
-      lng: 124.78 + mapX * 0.03,
-      mapX,
-      mapY,
-    };
+    setResolvingPin(true);
+    const resolved = await reverseGeocodeOSM(lat, lng, {
+      lat: pickup.lat,
+      lng: pickup.lng,
+    });
+    setResolvingPin(false);
     if (activeField === 'pickup') {
-      setPickup(customPin);
+      setPickup(resolved);
     } else {
-      setDestination(customPin);
+      setDestination(resolved);
     }
     setPinMode(false);
   };
 
+  const handleUseCurrentGps = async () => {
+    Haptics.selectionAsync().catch(() => {});
+    const loc = await locateUserGps();
+    if (loc && activeField === 'destination') {
+      setDestination(loc);
+    }
+  };
+
   if (pinMode) {
     return (
-      <View style={[styles.screen, { backgroundColor: colors.canvas }]}>
+      <View style={[styles.screenNoPad, { backgroundColor: colors.canvas }]}>
         <InteractiveMap
           pickup={pickup}
           destination={destination}
@@ -106,8 +153,13 @@ export default function SearchLocationScreen() {
             onPress={() => setPinMode(false)}
           />
           <GlassSurface radius={RADII.pill} contentStyle={styles.pinBanner}>
+            {resolvingPin ? (
+              <ActivityIndicator size="small" color={colors.brandGoldDeep} />
+            ) : null}
             <Text style={[styles.pinBannerText, { color: colors.textPrimary }]}>
-              Tap map to pin {activeField === 'pickup' ? 'pick-up' : 'destination'}
+              {resolvingPin
+                ? 'Finding street name…'
+                : `Tap anywhere on map for ${activeField === 'pickup' ? 'pick-up' : 'destination'}`}
             </Text>
           </GlassSurface>
         </View>
@@ -141,7 +193,10 @@ export default function SearchLocationScreen() {
       {/* Dual Route Input Glass Card */}
       <GlassSurface radius={RADII.xl} contentStyle={styles.routeCard}>
         <Pressable
-          onPress={() => setActiveField('pickup')}
+          onPress={() => {
+            setActiveField('pickup');
+            setQuery('');
+          }}
           style={[
             styles.routeField,
             SQUIRCLE,
@@ -160,7 +215,7 @@ export default function SearchLocationScreen() {
                 value={query}
                 onChangeText={setQuery}
                 placeholder={pickup.name}
-                placeholderTextColor={colors.textPrimary}
+                placeholderTextColor={colors.textSecondary}
                 autoFocus
                 style={[styles.fieldInput, { color: colors.textPrimary }]}
               />
@@ -180,7 +235,10 @@ export default function SearchLocationScreen() {
         />
 
         <Pressable
-          onPress={() => setActiveField('destination')}
+          onPress={() => {
+            setActiveField('destination');
+            setQuery('');
+          }}
           style={[
             styles.routeField,
             SQUIRCLE,
@@ -198,10 +256,10 @@ export default function SearchLocationScreen() {
               <TextInput
                 value={query}
                 onChangeText={setQuery}
-                placeholder={destination?.name ?? 'Search destination…'}
-                placeholderTextColor={
-                  destination ? colors.textPrimary : colors.textTertiary
+                placeholder={
+                  destination?.name ?? 'Search any place in Philippines…'
                 }
+                placeholderTextColor={colors.textSecondary}
                 autoFocus
                 style={[styles.fieldInput, { color: colors.textPrimary }]}
               />
@@ -224,8 +282,22 @@ export default function SearchLocationScreen() {
         </Pressable>
       </GlassSurface>
 
-      {/* Quick Action Pills: Pin on Map & Swap Stops */}
-      <View style={styles.actionRow}>
+      {/* Quick Action Pills: Live GPS, Pin on Map & Swap Stops */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.actionScroll}
+        contentContainerStyle={styles.actionRow}
+      >
+        <Pressable onPress={handleUseCurrentGps} accessibilityRole="button">
+          <GlassSurface radius={RADII.pill} contentStyle={styles.actionPill}>
+            <Ionicons name="locate" size={16} color={colors.info} />
+            <Text style={[styles.actionText, { color: colors.textPrimary }]}>
+              {loadingGps ? 'Locating…' : 'Use GPS'}
+            </Text>
+          </GlassSurface>
+        </Pressable>
+
         <Pressable
           onPress={() => {
             Haptics.selectionAsync().catch(() => {});
@@ -259,18 +331,26 @@ export default function SearchLocationScreen() {
             </Text>
           </GlassSurface>
         </Pressable>
+      </ScrollView>
+
+      {/* Results Header */}
+      <View style={styles.listHeaderRow}>
+        <Text style={[styles.listSectionLabel, { color: colors.textTertiary }]}>
+          {query.trim().length >= 2
+            ? 'LIVE OPENSTREETMAP RESULTS'
+            : 'POPULAR BAYBAY & VSU PLACES'}
+        </Text>
+        {searchingOsm ? (
+          <ActivityIndicator size="small" color={colors.brandGoldDeep} />
+        ) : null}
       </View>
 
-      {/* Suggested & Saved Places List */}
-      <Text style={[styles.listSectionLabel, { color: colors.textTertiary }]}>
-        SAVED & RECENT PLACES
-      </Text>
-
       <FlatList
-        data={filteredPlaces}
+        data={combinedPlaces}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
         renderItem={({ item }) => (
           <Pressable
             onPress={() => handleSelectPlace(item)}
@@ -336,6 +416,9 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: 20,
   },
+  screenNoPad: {
+    flex: 1,
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -386,11 +469,15 @@ const styles = StyleSheet.create({
     height: 1,
     marginHorizontal: 10,
   },
+  actionScroll: {
+    flexGrow: 0,
+    marginTop: 14,
+    marginBottom: 16,
+  },
   actionRow: {
     flexDirection: 'row',
     gap: 10,
-    marginTop: 14,
-    marginBottom: 18,
+    paddingVertical: 2,
   },
   actionPill: {
     flexDirection: 'row',
@@ -403,11 +490,16 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
   },
+  listHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
   listSectionLabel: {
     fontSize: 11,
     fontWeight: '700',
     letterSpacing: 0.6,
-    marginBottom: 10,
   },
   listContent: {
     gap: 10,
@@ -461,12 +553,14 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   pinBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
     paddingHorizontal: 16,
     height: 44,
-    justifyContent: 'center',
   },
   pinBannerText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
   },
 });

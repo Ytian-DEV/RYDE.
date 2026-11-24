@@ -1,424 +1,357 @@
-import React, { useEffect } from 'react';
-import {
-  LayoutChangeEvent,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
-import Animated, {
-  Easing,
-  useAnimatedStyle,
-  useSharedValue,
-  withRepeat,
-  withTiming,
-} from 'react-native-reanimated';
-import Svg, {
-  Circle,
-  Defs,
-  LinearGradient,
-  Path,
-  Rect,
-  Stop,
-  Text as SvgText,
-} from 'react-native-svg';
+import React, { useEffect, useMemo, useRef } from 'react';
+import { Platform, StyleSheet, Text, View } from 'react-native';
+import { WebView, WebViewMessageEvent, WebViewProps } from 'react-native-webview';
 import { GlassSurface } from '@/components/ui/GlassSurface';
 import { RADII, TABULAR_NUMS } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/useAppTheme';
-import { PlaceLocation } from '@/types';
+import { DEFAULT_CENTER } from '@/services/geoService';
+import { LatLng, PlaceLocation } from '@/types';
 
-interface InteractiveMapProps {
+const NativeWebView = WebView as unknown as React.ComponentType<
+  WebViewProps & { ref?: React.Ref<WebView> }
+>;
+
+export interface InteractiveMapProps {
   pickup?: PlaceLocation;
   destination?: PlaceLocation | null;
+  routeCoords?: Array<[number, number]>;
   showRoute?: boolean;
   showRadar?: boolean;
-  driverProgress?: number; // 0..1 along route
+  driverCoords?: LatLng | null;
+  driverProgress?: number; // fallback 0..1 interpolation if driverCoords not supplied
   etaPillLabel?: string;
   pinMode?: boolean;
-  onPinSelect?: (mapX: number, mapY: number) => void;
+  onPinSelect?: (lat: number, lng: number) => void;
+}
+
+function buildLeafletHtml(isDark: boolean): string {
+  const tileUrl = isDark
+    ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+    : 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
+  const bg = isDark ? '#14181F' : '#ECEAE2';
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+  html, body, #map { margin: 0; padding: 0; width: 100%; height: 100%; background: ${bg}; overflow: hidden; }
+  .leaflet-control-attribution { font-size: 9px !important; opacity: 0.45; background: transparent !important; }
+  .ryde-pulse {
+    width: 18px; height: 18px; border-radius: 50%;
+    background: #007AFF; border: 3px solid #FFFFFF;
+    box-shadow: 0 0 0 10px rgba(0, 122, 255, 0.24);
+  }
+  .ryde-pin-pickup {
+    width: 18px; height: 18px; border-radius: 50%;
+    background: #16A34A; border: 3px solid #FFFFFF;
+    box-shadow: 0 3px 10px rgba(0,0,0,0.35);
+  }
+  .ryde-pin-dest {
+    width: 18px; height: 18px; border-radius: 50%;
+    background: #EF4444; border: 3px solid #FFFFFF;
+    box-shadow: 0 3px 10px rgba(0,0,0,0.35);
+  }
+  .ryde-driver {
+    width: 24px; height: 24px; border-radius: 50%;
+    background: #FFD95A; border: 3px solid #181C23;
+    box-shadow: 0 0 0 10px rgba(255, 217, 90, 0.35), 0 4px 12px rgba(0,0,0,0.38);
+  }
+  .ryde-radar-wrap {
+    position: relative; width: 120px; height: 120px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .ryde-radar-ring {
+    position: absolute; width: 120px; height: 120px; border-radius: 50%;
+    border: 2px solid #E5B82E; background: rgba(255, 217, 90, 0.22);
+    animation: rydePulse 2s ease-out infinite;
+  }
+  .ryde-radar-ring.delay { animation-delay: 1s; }
+  .ryde-radar-core {
+    width: 20px; height: 20px; border-radius: 50%;
+    background: #181C23; border: 4px solid #FFD95A; z-index: 2;
+  }
+  @keyframes rydePulse {
+    0% { transform: scale(0.35); opacity: 0.85; }
+    100% { transform: scale(1.25); opacity: 0; }
+  }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+  const map = L.map('map', {
+    zoomControl: false,
+    attributionControl: true
+  }).setView([${DEFAULT_CENTER.lat}, ${DEFAULT_CENTER.lng}], 14);
+
+  L.tileLayer('${tileUrl}', {
+    maxZoom: 19,
+    subdomains: 'abcd',
+    attribution: '&copy; OSM &copy; CARTO'
+  }).addTo(map);
+
+  let layerGroup = L.layerGroup().addTo(map);
+  let lastFitKey = '';
+  let pinMode = false;
+
+  function postToHost(payload) {
+    const str = JSON.stringify(payload);
+    if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
+      window.ReactNativeWebView.postMessage(str);
+    } else if (window.parent && window.parent !== window) {
+      window.parent.postMessage(str, '*');
+    }
+  }
+
+  map.on('click', function(e) {
+    if (!pinMode) return;
+    postToHost({ type: 'pin', lat: e.latlng.lat, lng: e.latlng.lng });
+  });
+
+  window.updateRydeMap = function(state) {
+    pinMode = !!state.pinMode;
+    layerGroup.clearLayers();
+
+    const p = state.pickup;
+    const d = state.destination;
+    const showRoute = !!state.showRoute;
+    const showRadar = !!state.showRadar;
+    const routeCoords = Array.isArray(state.routeCoords) && state.routeCoords.length >= 2
+      ? state.routeCoords
+      : (p && d ? [[p.lat, p.lng], [d.lat, d.lng]] : []);
+
+    if (showRadar && p) {
+      const radarIcon = L.divIcon({
+        className: '',
+        html: '<div class="ryde-radar-wrap"><div class="ryde-radar-ring"></div><div class="ryde-radar-ring delay"></div><div class="ryde-radar-core"></div></div>',
+        iconSize: [120, 120],
+        iconAnchor: [60, 60]
+      });
+      L.marker([p.lat, p.lng], { icon: radarIcon }).addTo(layerGroup);
+      const key = 'radar-' + p.lat.toFixed(4) + '-' + p.lng.toFixed(4);
+      if (key !== lastFitKey) {
+        lastFitKey = key;
+        map.setView([p.lat - 0.004, p.lng], 15, { animate: true });
+      }
+      return;
+    }
+
+    if (showRoute && p && d && routeCoords.length >= 2) {
+      const routeColor = state.isDark ? '#FFD95A' : '#007AFF';
+      L.polyline(routeCoords, { color: routeColor, weight: 10, opacity: 0.24, lineCap: 'round' }).addTo(layerGroup);
+      const poly = L.polyline(routeCoords, { color: routeColor, weight: 5, opacity: 0.95, lineCap: 'round' }).addTo(layerGroup);
+
+      L.marker([p.lat, p.lng], {
+        icon: L.divIcon({ className: '', html: '<div class="ryde-pin-pickup"></div>', iconSize: [18, 18], iconAnchor: [9, 9] })
+      }).addTo(layerGroup);
+
+      L.marker([d.lat, d.lng], {
+        icon: L.divIcon({ className: '', html: '<div class="ryde-pin-dest"></div>', iconSize: [18, 18], iconAnchor: [9, 9] })
+      }).addTo(layerGroup);
+
+      if (state.driverPoint) {
+        L.marker([state.driverPoint.lat, state.driverPoint.lng], {
+          icon: L.divIcon({ className: '', html: '<div class="ryde-driver"></div>', iconSize: [24, 24], iconAnchor: [12, 12] })
+        }).addTo(layerGroup);
+      }
+
+      const key = 'route-' + p.lat.toFixed(4) + ',' + p.lng.toFixed(4) + '-' + d.lat.toFixed(4) + ',' + d.lng.toFixed(4);
+      if (key !== lastFitKey) {
+        lastFitKey = key;
+        map.fitBounds(poly.getBounds(), { paddingTopLeft: [48, 110], paddingBottomRight: [48, 360], maxZoom: 16 });
+      }
+      return;
+    }
+
+    if (p) {
+      L.marker([p.lat, p.lng], {
+        icon: L.divIcon({ className: '', html: '<div class="ryde-pulse"></div>', iconSize: [18, 18], iconAnchor: [9, 9] })
+      }).addTo(layerGroup);
+
+      const key = 'center-' + p.lat.toFixed(4) + ',' + p.lng.toFixed(4);
+      if (key !== lastFitKey) {
+        lastFitKey = key;
+        map.setView([p.lat - 0.005, p.lng], 14, { animate: true });
+      }
+    }
+  };
+
+  window.addEventListener('message', function(ev) {
+    try {
+      const msg = typeof ev.data === 'string' ? JSON.parse(ev.data) : ev.data;
+      if (msg && msg.type === 'sync') {
+        window.updateRydeMap(msg.payload);
+      }
+    } catch (_) {}
+  });
+
+  postToHost({ type: 'ready' });
+</script>
+</body>
+</html>`;
 }
 
 /**
- * Stylized native vector map of Baybay City & Visayas State University (VSU),
- * rendering smoothly across iOS & Android without external API keys.
+ * Real interactive OpenStreetMap + CartoDB Leaflet map working across iOS, Android, and Web
+ * with zero paid API keys. Supports real OSRM road polylines, live driver GPS, and tap-to-pin.
  */
 export const InteractiveMap: React.FC<InteractiveMapProps> = ({
   pickup,
   destination,
+  routeCoords,
   showRoute = false,
   showRadar = false,
+  driverCoords,
   driverProgress,
   etaPillLabel,
   pinMode = false,
   onPinSelect,
 }) => {
   const { colors, isDark } = useAppTheme();
-  const [size, setSize] = React.useState({ width: 400, height: 860 });
+  const webViewRef = useRef<WebView>(null);
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const readyRef = useRef(false);
 
-  const pulse = useSharedValue(0);
+  const html = useMemo(() => buildLeafletHtml(isDark), [isDark]);
 
-  useEffect(() => {
-    pulse.value = withRepeat(
-      withTiming(1, { duration: 1900, easing: Easing.out(Easing.ease) }),
-      -1,
-      false
-    );
-  }, [pulse]);
+  // Compute driver coordinate (prefer live GPS from Supabase, fallback to polyline interpolation)
+  const resolvedDriverPoint: LatLng | null = useMemo(() => {
+    if (driverCoords) return driverCoords;
+    if (typeof driverProgress !== 'number' || !pickup || !destination) {
+      return null;
+    }
+    const pts =
+      routeCoords && routeCoords.length >= 2
+        ? routeCoords
+        : [
+            [pickup.lat, pickup.lng] as [number, number],
+            [destination.lat, destination.lng] as [number, number],
+          ];
+    const clamped = Math.max(0, Math.min(1, driverProgress));
+    const idx = Math.min(pts.length - 1, Math.floor(clamped * (pts.length - 1)));
+    const pt = pts[idx] ?? pts[0]!;
+    return { lat: pt[0], lng: pt[1] };
+  }, [driverCoords, driverProgress, pickup, destination, routeCoords]);
 
-  const radarRingStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: 0.7 + pulse.value * 1.45 }],
-    opacity: 0.55 * (1 - pulse.value),
-  }));
+  const mapPayload = useMemo(
+    () => ({
+      isDark,
+      pickup: pickup ? { lat: pickup.lat, lng: pickup.lng } : DEFAULT_CENTER,
+      destination: destination
+        ? { lat: destination.lat, lng: destination.lng }
+        : null,
+      routeCoords: routeCoords ?? [],
+      showRoute,
+      showRadar,
+      driverPoint: resolvedDriverPoint,
+      pinMode,
+    }),
+    [
+      isDark,
+      pickup,
+      destination,
+      routeCoords,
+      showRoute,
+      showRadar,
+      resolvedDriverPoint,
+      pinMode,
+    ]
+  );
 
-  const radarRingSecondaryStyle = useAnimatedStyle(() => {
-    const shifted = (pulse.value + 0.5) % 1;
-    return {
-      transform: [{ scale: 0.7 + shifted * 1.45 }],
-      opacity: 0.45 * (1 - shifted),
-    };
-  });
-
-  const handleLayout = (e: LayoutChangeEvent) => {
-    const { width, height } = e.nativeEvent.layout;
-    if (width > 0 && height > 0) {
-      setSize({ width, height });
+  const pushStateToMap = () => {
+    if (Platform.OS === 'web') {
+      iframeRef.current?.contentWindow?.postMessage(
+        JSON.stringify({ type: 'sync', payload: mapPayload }),
+        '*'
+      );
+    } else if (readyRef.current) {
+      webViewRef.current?.injectJavaScript(
+        `window.updateRydeMap && window.updateRydeMap(${JSON.stringify(mapPayload)}); true;`
+      );
     }
   };
 
-  // Map colors tailored for iOS 26 Light & Dark map themes
-  const m = isDark
-    ? {
-        land: '#161C26',
-        sea: '#0E243B',
-        hills: '#192924',
-        campus: '#232934',
-        river: '#1E4A73',
-        highway: '#C8A53D',
-        highwayStroke: '#8F7425',
-        road: '#2B3444',
-        label: '#8FA0B8',
-        campusLabel: '#D2C29B',
-        route: '#FFD95A',
-        routeGlow: 'rgba(255, 217, 90, 0.28)',
+  useEffect(() => {
+    pushStateToMap();
+  }, [mapPayload]);
+
+  // Listen to iframe postMessage on Web
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined') return;
+    const handler = (ev: MessageEvent) => {
+      try {
+        const data = typeof ev.data === 'string' ? JSON.parse(ev.data) : ev.data;
+        if (data?.type === 'ready') {
+          readyRef.current = true;
+          pushStateToMap();
+        } else if (data?.type === 'pin' && onPinSelect) {
+          onPinSelect(Number(data.lat), Number(data.lng));
+        }
+      } catch {
+        // Ignore unrelated browser messages
       }
-    : {
-        land: '#ECEAE2',
-        sea: '#A8D8F8',
-        hills: '#CDE6B9',
-        campus: '#EFE2CE',
-        river: '#89C4F4',
-        highway: '#FCD65C',
-        highwayStroke: '#E2B83B',
-        road: '#FFFFFF',
-        label: '#6D7684',
-        campusLabel: '#8A6C42',
-        route: '#007AFF',
-        routeGlow: 'rgba(0, 122, 255, 0.22)',
+    };
+    window.addEventListener('message', handler);
+    return () => window.removeEventListener('message', handler);
+  }, [onPinSelect, mapPayload]);
+
+  const handleNativeMessage = (event: WebViewMessageEvent) => {
+    try {
+      const data = JSON.parse(event.nativeEvent.data) as {
+        type?: string;
+        lat?: number;
+        lng?: number;
       };
-
-  const px = (pickup?.mapX ?? 0.34) * size.width;
-  const py = (pickup?.mapY ?? 0.42) * size.height * 0.62;
-  const dx = (destination?.mapX ?? 0.70) * size.width;
-  const dy = (destination?.mapY ?? 0.26) * size.height * 0.62;
-
-  const ctrlX = (px + dx) / 2 - 24;
-  const ctrlY = Math.min(py, dy) - 18;
-  const routePath = `M ${px} ${py} Q ${ctrlX} ${ctrlY} ${dx} ${dy}`;
-
-  // Point along quadratic bezier for driver marker
-  const t = Math.max(0, Math.min(1, driverProgress ?? 0.45));
-  const inv = 1 - t;
-  const drvX = inv * inv * px + 2 * inv * t * ctrlX + t * t * dx;
-  const drvY = inv * inv * py + 2 * inv * t * ctrlY + t * t * dy;
-
-  const midX = 0.25 * px + 0.5 * ctrlX + 0.25 * dx;
-  const midY = 0.25 * py + 0.5 * ctrlY + 0.25 * dy;
+      if (data.type === 'ready') {
+        readyRef.current = true;
+        pushStateToMap();
+      } else if (
+        data.type === 'pin' &&
+        typeof data.lat === 'number' &&
+        typeof data.lng === 'number' &&
+        onPinSelect
+      ) {
+        onPinSelect(data.lat, data.lng);
+      }
+    } catch {
+      // Ignore malformed bridge messages
+    }
+  };
 
   return (
-    <Pressable
-      disabled={!pinMode}
-      onLayout={handleLayout}
-      onPress={(e) => {
-        if (!pinMode || !onPinSelect) return;
-        const nx = Math.max(0.12, Math.min(0.88, e.nativeEvent.locationX / size.width));
-        const ny = Math.max(0.15, Math.min(0.82, e.nativeEvent.locationY / (size.height * 0.62)));
-        onPinSelect(nx, ny);
-      }}
-      style={[styles.container, { backgroundColor: m.land }]}
-    >
-      <Svg
-        width={size.width}
-        height={size.height}
-        viewBox="0 0 440 956"
-        preserveAspectRatio="xMidYMid slice"
-        style={StyleSheet.absoluteFill}
-      >
-        <Defs>
-          <LinearGradient id="seaGrad" x1="0" y1="0" x2="1" y2="1">
-            <Stop offset="0" stopColor={m.sea} stopOpacity="1" />
-            <Stop offset="1" stopColor={m.sea} stopOpacity="0.88" />
-          </LinearGradient>
-        </Defs>
-
-        {/* Base Land */}
-        <Rect x="0" y="0" width="440" height="956" fill={m.land} />
-
-        {/* Camotes Sea Coastline (West) */}
-        <Path
-          d="M0 240 C 35 310, 62 390, 95 450 C 122 500, 148 560, 172 640 L 172 956 L 0 956 Z"
-          fill="url(#seaGrad)"
+    <View style={[styles.container, { backgroundColor: colors.canvas }]}>
+      {Platform.OS === 'web' ? (
+        React.createElement('iframe', {
+          ref: iframeRef,
+          srcDoc: html,
+          title: 'Ryde Live Map',
+          style: {
+            width: '100%',
+            height: '100%',
+            border: 'none',
+            display: 'block',
+          },
+        })
+      ) : (
+        <NativeWebView
+          ref={webViewRef}
+          source={{ html }}
+          originWhitelist={['*']}
+          javaScriptEnabled
+          domStorageEnabled
+          scrollEnabled={false}
+          onMessage={handleNativeMessage}
+          style={styles.webview}
         />
-
-        {/* Mount Pangasugan / Green Highlands (East) */}
-        <Path
-          d="M270 0 L 440 0 L 440 580 C 370 540, 325 460, 310 380 C 292 280, 260 150, 270 0 Z"
-          fill={m.hills}
-        />
-
-        {/* VSU Campus Zone */}
-        <Path
-          d="M90 110 L 295 85 L 315 260 L 210 315 L 115 265 Z"
-          fill={m.campus}
-          opacity={0.92}
-        />
-
-        {/* Catbiga-a River */}
-        <Path
-          d="M0 78 C 85 95, 130 142, 200 120 C 260 100, 315 110, 440 95"
-          stroke={m.river}
-          strokeWidth="6"
-          fill="none"
-          strokeLinecap="round"
-        />
-        <Path
-          d="M120 390 C 185 370, 250 385, 315 352 C 365 326, 405 335, 440 315"
-          stroke={m.river}
-          strokeWidth="4.5"
-          fill="none"
-          strokeLinecap="round"
-        />
-
-        {/* Secondary Campus & Town Streets */}
-        <Path
-          d="M42 260 L 180 210 L 270 230 M130 150 L 165 290 M180 210 L 250 150 L 320 175 M115 340 L 245 310 L 335 360 M210 420 L 365 440 M155 475 L 290 490"
-          stroke={m.road}
-          strokeWidth="4"
-          fill="none"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-
-        {/* National Highway 70 (Signature Golden Arterial) */}
-        <Path
-          d="M72 0 C 86 95, 80 155, 118 228 C 148 286, 202 308, 224 352 C 242 388, 238 465, 232 560 L 222 956"
-          stroke={m.highwayStroke}
-          strokeWidth="12"
-          fill="none"
-          strokeLinecap="round"
-        />
-        <Path
-          d="M72 0 C 86 95, 80 155, 118 228 C 148 286, 202 308, 224 352 C 242 388, 238 465, 232 560 L 222 956"
-          stroke={m.highway}
-          strokeWidth="8.5"
-          fill="none"
-          strokeLinecap="round"
-        />
-
-        {/* Map Labels */}
-        <SvgText
-          x="198"
-          y="196"
-          fill={m.campusLabel}
-          fontSize="13"
-          fontWeight="700"
-          textAnchor="middle"
-        >
-          Visayas State University
-        </SvgText>
-        <SvgText
-          x="74"
-          y="258"
-          fill={isDark ? '#F87171' : '#DC2626'}
-          fontSize="11"
-          fontWeight="600"
-        >
-          VSU Hospital
-        </SvgText>
-        <SvgText
-          x="168"
-          y="292"
-          fill={m.campusLabel}
-          fontSize="11"
-          fontWeight="600"
-        >
-          Stomach Inn
-        </SvgText>
-        <SvgText
-          x="262"
-          y="366"
-          fill={m.label}
-          fontSize="12"
-          fontWeight="600"
-          letterSpacing="1"
-        >
-          UPPER GUADALUPE
-        </SvgText>
-        <SvgText
-          x="150"
-          y="466"
-          fill={m.label}
-          fontSize="11"
-          fontWeight="600"
-          letterSpacing="0.8"
-        >
-          GUADALUPE
-        </SvgText>
-        <SvgText
-          x="130"
-          y="246"
-          fill={m.label}
-          fontSize="10"
-          fontWeight="700"
-        >
-          HWY 70
-        </SvgText>
-      </Svg>
-
-      {/* Dynamic Route Layer (screen-space SVG matching actual container dimensions) */}
-      <Svg
-        width={size.width}
-        height={size.height}
-        style={StyleSheet.absoluteFill}
-        pointerEvents="none"
-      >
-        {showRoute && pickup && destination ? (
-          <>
-            <Path
-              d={routePath}
-              stroke={m.routeGlow}
-              strokeWidth={14}
-              fill="none"
-              strokeLinecap="round"
-            />
-            <Path
-              d={routePath}
-              stroke={m.route}
-              strokeWidth={5}
-              fill="none"
-              strokeLinecap="round"
-            />
-            {/* Pickup Pin */}
-            <Circle
-              cx={px}
-              cy={py}
-              r={10}
-              fill={colors.success}
-              stroke="#FFFFFF"
-              strokeWidth={3}
-            />
-            {/* Destination Pin */}
-            <Circle
-              cx={dx}
-              cy={dy}
-              r={10}
-              fill={colors.danger}
-              stroke="#FFFFFF"
-              strokeWidth={3}
-            />
-            {/* Driver Live Marker */}
-            {typeof driverProgress === 'number' ? (
-              <>
-                <Circle
-                  cx={drvX}
-                  cy={drvY}
-                  r={18}
-                  fill="rgba(255, 217, 90, 0.35)"
-                />
-                <Circle
-                  cx={drvX}
-                  cy={drvY}
-                  r={11}
-                  fill={colors.brandGold}
-                  stroke={colors.obsidian}
-                  strokeWidth={3}
-                />
-              </>
-            ) : null}
-          </>
-        ) : (
-          /* Default Blue User GPS Dot */
-          <>
-            <Circle
-              cx={px}
-              cy={py}
-              r={20}
-              fill={isDark ? 'rgba(10, 132, 255, 0.28)' : 'rgba(0, 122, 255, 0.20)'}
-            />
-            <Circle
-              cx={px}
-              cy={py}
-              r={8.5}
-              fill={colors.info}
-              stroke="#FFFFFF"
-              strokeWidth={3}
-            />
-          </>
-        )}
-      </Svg>
-
-      {/* Animated Concentric Radar Pulse (Finding Driver state) */}
-      {showRadar ? (
-        <View
-          pointerEvents="none"
-          style={[
-            styles.radarAnchor,
-            { left: px - 60, top: py - 60 },
-          ]}
-        >
-          <Animated.View
-            style={[
-              styles.radarRing,
-              {
-                borderColor: colors.brandGoldDeep,
-                backgroundColor: colors.brandGoldSoft,
-              },
-              radarRingStyle,
-            ]}
-          />
-          <Animated.View
-            style={[
-              styles.radarRing,
-              {
-                borderColor: colors.brandGold,
-                backgroundColor: colors.brandGoldSoft,
-              },
-              radarRingSecondaryStyle,
-            ]}
-          />
-          <View
-            style={[
-              styles.radarDot,
-              {
-                backgroundColor: colors.obsidian,
-                borderColor: colors.brandGold,
-              },
-            ]}
-          />
-        </View>
-      ) : null}
+      )}
 
       {/* Floating Route ETA Pill */}
       {showRoute && etaPillLabel ? (
-        <View
-          pointerEvents="none"
-          style={[
-            styles.etaPillWrap,
-            {
-              left: Math.max(24, Math.min(size.width - 158, midX - 66)),
-              top: Math.max(120, midY - 40),
-            },
-          ]}
-        >
+        <View pointerEvents="none" style={styles.etaPillWrap}>
           <GlassSurface radius={RADII.pill} contentStyle={styles.etaPillInner}>
             <Text
               style={[
@@ -432,7 +365,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
           </GlassSurface>
         </View>
       ) : null}
-    </Pressable>
+    </View>
   );
 };
 
@@ -441,28 +374,15 @@ const styles = StyleSheet.create({
     flex: 1,
     overflow: 'hidden',
   },
-  radarAnchor: {
-    position: 'absolute',
-    width: 120,
-    height: 120,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  radarRing: {
-    position: 'absolute',
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    borderWidth: 1.5,
-  },
-  radarDot: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    borderWidth: 4,
+  webview: {
+    flex: 1,
+    backgroundColor: 'transparent',
   },
   etaPillWrap: {
     position: 'absolute',
+    top: 122,
+    alignSelf: 'center',
+    zIndex: 10,
   },
   etaPillInner: {
     paddingHorizontal: 14,

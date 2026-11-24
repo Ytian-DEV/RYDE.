@@ -1,5 +1,12 @@
-import React, { useMemo, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  ActivityIndicator,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import BottomSheet, {
@@ -41,17 +48,27 @@ export default function RideTiersScreen() {
   const insets = useSafeAreaInsets();
   const sheetRef = useRef<BottomSheet>(null);
   const [paySheetOpen, setPaySheetOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   const pickup = useRydeStore((s) => s.pickup);
   const destination = useRydeStore((s) => s.destination) ?? BAYBAY_PLACES[1]!;
+  const routeGeometry = useRydeStore((s) => s.routeGeometry);
+  const loadingRoute = useRydeStore((s) => s.loadingRoute);
+  const refreshRoute = useRydeStore((s) => s.refreshRoute);
   const selectedTierId = useRydeStore((s) => s.selectedTierId);
   const setSelectedTierId = useRydeStore((s) => s.setSelectedTierId);
   const selectedPayment = useRydeStore((s) => s.selectedPayment);
+  const paymentReference = useRydeStore((s) => s.paymentReference);
+  const setPaymentReference = useRydeStore((s) => s.setPaymentReference);
   const scheduledTimeLabel = useRydeStore((s) => s.scheduledTimeLabel);
   const appliedPromo = useRydeStore((s) => s.appliedPromo);
   const startRideRequest = useRydeStore((s) => s.startRideRequest);
 
-  const snapPoints = useMemo(() => ['58%', '82%'], []);
+  const snapPoints = useMemo(() => ['58%', '84%'], []);
+
+  useEffect(() => {
+    refreshRoute().catch(() => {});
+  }, [pickup.lat, pickup.lng, destination.lat, destination.lng, refreshRoute]);
 
   const currentPayment = useMemo(
     () =>
@@ -71,13 +88,23 @@ export default function RideTiersScreen() {
         selectedTier,
         pickup,
         destination,
-        appliedPromo?.discountAmount ?? 0
+        appliedPromo?.discountAmount ?? 0,
+        routeGeometry?.distanceKm
       ),
-    [selectedTier, pickup, destination, appliedPromo]
+    [selectedTier, pickup, destination, appliedPromo, routeGeometry]
   );
 
-  const handleConfirm = () => {
-    startRideRequest();
+  const etaLabel = loadingRoute
+    ? 'Calculating route…'
+    : `${routeGeometry?.durationMin ?? Math.max(5, Math.round(selectedFare.distanceKm * 2.4))} min • ${selectedFare.distanceKm.toFixed(1)} km`;
+
+  const showRefInput =
+    selectedPayment === 'gcash' || selectedPayment === 'bank_transfer';
+
+  const handleConfirm = async () => {
+    setSubmitting(true);
+    await startRideRequest();
+    setSubmitting(false);
     router.replace('/matching');
   };
 
@@ -86,8 +113,9 @@ export default function RideTiersScreen() {
       <InteractiveMap
         pickup={pickup}
         destination={destination}
+        routeCoords={routeGeometry?.coords}
         showRoute
-        etaPillLabel={`${Math.max(5, Math.round(selectedFare.distanceKm * 2.4))} min • ${selectedFare.distanceKm.toFixed(1)} km`}
+        etaPillLabel={etaLabel}
       />
 
       {/* Top Floating Back + Route Pill */}
@@ -141,7 +169,9 @@ export default function RideTiersScreen() {
             <Text style={[styles.sheetTitle, { color: colors.textPrimary }]}>
               Choose your Ryde
             </Text>
-            {appliedPromo ? (
+            {loadingRoute ? (
+              <ActivityIndicator size="small" color={colors.brandGoldDeep} />
+            ) : appliedPromo ? (
               <View
                 style={[
                   styles.promoTag,
@@ -163,7 +193,8 @@ export default function RideTiersScreen() {
                 tier,
                 pickup,
                 destination,
-                appliedPromo?.discountAmount ?? 0
+                appliedPromo?.discountAmount ?? 0,
+                routeGeometry?.distanceKm
               );
               return (
                 <Pressable
@@ -323,8 +354,35 @@ export default function RideTiersScreen() {
             </Pressable>
           </View>
 
+          {showRefInput ? (
+            <View
+              style={[
+                styles.refBox,
+                SQUIRCLE,
+                {
+                  backgroundColor: colors.pill,
+                  borderColor: colors.borderSubtle,
+                },
+              ]}
+            >
+              <Ionicons
+                name="receipt-outline"
+                size={16}
+                color={colors.textSecondary}
+              />
+              <TextInput
+                value={paymentReference}
+                onChangeText={setPaymentReference}
+                placeholder={`Optional ${currentPayment.label} Ref # (saved to receipt)`}
+                placeholderTextColor={colors.textTertiary}
+                style={[styles.refInput, { color: colors.textPrimary }]}
+              />
+            </View>
+          ) : null}
+
           <PrimaryButton
             label={`Confirm ${selectedTier.name} • ${formatPeso(selectedFare.totalFare)}`}
+            loading={submitting}
             onPress={handleConfirm}
           />
         </BottomSheetScrollView>
@@ -464,5 +522,19 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     flex: 1,
+  },
+  refBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: 46,
+    borderRadius: 16,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    gap: 8,
+  },
+  refInput: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '500',
   },
 });
