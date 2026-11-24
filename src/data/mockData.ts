@@ -1,16 +1,15 @@
 import { haversineKm } from '@/services/geoService';
 import {
-  DriverProfile,
-  EmergencyContact,
   PaymentMethod,
   PlaceLocation,
-  PromoCode,
   RideTier,
   ServiceItem,
-  TripRecord,
 } from '@/types';
 
-/** Real GPS coordinates for Baybay City & Visayas State University (VSU), Leyte */
+/**
+ * Public Baybay City & Visayas State University (VSU) map landmarks for search suggestions.
+ * Contains no user-specific or personal seed data.
+ */
 export const BAYBAY_PLACES: PlaceLocation[] = [
   {
     id: 'loc-utod',
@@ -21,8 +20,6 @@ export const BAYBAY_PLACES: PlaceLocation[] = [
     category: 'store',
     lat: 10.7285,
     lng: 124.7986,
-    mapX: 0.28,
-    mapY: 0.62,
   },
   {
     id: 'loc-dcst',
@@ -33,8 +30,6 @@ export const BAYBAY_PLACES: PlaceLocation[] = [
     category: 'campus',
     lat: 10.7468,
     lng: 124.7948,
-    mapX: 0.68,
-    mapY: 0.28,
   },
   {
     id: 'loc-vsu-hosp',
@@ -45,20 +40,6 @@ export const BAYBAY_PLACES: PlaceLocation[] = [
     category: 'landmark',
     lat: 10.7432,
     lng: 124.7912,
-    mapX: 0.22,
-    mapY: 0.41,
-  },
-  {
-    id: 'loc-home',
-    name: 'Home (Upper Guadalupe)',
-    address: 'Zone 3, Upper Guadalupe, Baybay 6521',
-    distanceKm: 1.5,
-    etaMinutes: 4,
-    category: 'home',
-    lat: 10.7336,
-    lng: 124.8018,
-    mapX: 0.54,
-    mapY: 0.58,
   },
   {
     id: 'loc-stomach-inn',
@@ -69,8 +50,6 @@ export const BAYBAY_PLACES: PlaceLocation[] = [
     category: 'store',
     lat: 10.7391,
     lng: 124.7964,
-    mapX: 0.45,
-    mapY: 0.46,
   },
   {
     id: 'loc-market',
@@ -81,8 +60,6 @@ export const BAYBAY_PLACES: PlaceLocation[] = [
     category: 'landmark',
     lat: 10.6788,
     lng: 124.8012,
-    mapX: 0.80,
-    mapY: 0.74,
   },
   {
     id: 'loc-baywalk',
@@ -93,8 +70,6 @@ export const BAYBAY_PLACES: PlaceLocation[] = [
     category: 'landmark',
     lat: 10.6772,
     lng: 124.7988,
-    mapX: 0.18,
-    mapY: 0.76,
   },
 ];
 
@@ -202,118 +177,6 @@ export const PAYMENT_METHODS: PaymentMethod[] = [
     subtitle: 'Pay from your Ryde Wallet balance',
     shortLabel: 'Ryde Wallet',
     icon: 'card-outline',
-  },
-];
-
-export const SAMPLE_DRIVERS: DriverProfile[] = [
-  {
-    id: 'drv-1',
-    name: 'Marco Reyes',
-    initials: 'MR',
-    rating: 4.9,
-    tripsCompleted: 1420,
-    vehicleModel: 'Toyota Vios',
-    vehicleColor: 'Silver',
-    plateNumber: 'ABC 4821',
-    phone: '+63 917 555 0192',
-    verified: true,
-  },
-  {
-    id: 'drv-2',
-    name: 'Jun Dela Cruz',
-    initials: 'JD',
-    rating: 4.85,
-    tripsCompleted: 980,
-    vehicleModel: 'Honda Click 160i',
-    vehicleColor: 'Matte Black',
-    plateNumber: 'LYT 9204',
-    phone: '+63 918 555 0147',
-    verified: true,
-  },
-  {
-    id: 'drv-3',
-    name: 'Elena Santos',
-    initials: 'ES',
-    rating: 4.96,
-    tripsCompleted: 2105,
-    vehicleModel: 'Mitsubishi Xpander',
-    vehicleColor: 'Pearl White',
-    plateNumber: 'EVS 3319',
-    phone: '+63 927 555 0114',
-    verified: true,
-  },
-];
-
-export const INITIAL_TRIPS: TripRecord[] = [
-  {
-    id: 'trip-101',
-    category: 'taxi',
-    pickup: BAYBAY_PLACES[0]!,
-    destination: BAYBAY_PLACES[1]!,
-    tierName: 'Ryde Economy',
-    driver: SAMPLE_DRIVERS[0]!,
-    paymentMethod: 'gcash',
-    baseFare: 40,
-    distanceFare: 24,
-    bookingFee: 0,
-    tipAmount: 10,
-    totalFare: 64,
-    distanceKm: 3.4,
-    durationMin: 9,
-    dateLabel: 'Today, 2:14 PM',
-    status: 'Completed',
-    ratingGiven: 5,
-  },
-  {
-    id: 'trip-102',
-    category: 'motor',
-    pickup: BAYBAY_PLACES[3]!,
-    destination: BAYBAY_PLACES[5]!,
-    tierName: 'Ryde Motor',
-    driver: SAMPLE_DRIVERS[1]!,
-    paymentMethod: 'cash',
-    baseFare: 22,
-    distanceFare: 26,
-    bookingFee: 0,
-    tipAmount: 0,
-    totalFare: 48,
-    distanceKm: 4.3,
-    durationMin: 11,
-    dateLabel: 'Yesterday, 5:40 PM',
-    status: 'Completed',
-    ratingGiven: 5,
-  },
-];
-
-export const INITIAL_PROMOS: PromoCode[] = [
-  {
-    id: 'promo-1',
-    code: 'VSUFREE20',
-    title: '₱20 off any VSU Campus ride',
-    discountAmount: 20,
-    expiry: 'Valid until Dec 31, 2026',
-  },
-  {
-    id: 'promo-2',
-    code: 'RYDE26',
-    title: '₱15 off Ryde Economy, Comfort & XL',
-    discountAmount: 15,
-    expiry: 'Valid until Dec 15, 2026',
-  },
-];
-
-export const INITIAL_CONTACTS: EmergencyContact[] = [
-  {
-    id: 'em-1',
-    name: 'Maria Mendoza',
-    relation: 'Mother',
-    phone: '+63 917 811 2409',
-  },
-  {
-    id: 'em-2',
-    name: 'VSU Campus Security',
-    relation: '24/7 Campus Dispatch',
-    phone: '(053) 565-0600',
   },
 ];
 

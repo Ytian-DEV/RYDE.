@@ -15,7 +15,7 @@ create table if not exists public.profiles (
   phone text not null default '+63 917 000 0000',
   rating numeric(3,2) not null default 5.00,
   total_trips integer not null default 0,
-  wallet_balance numeric(10,2) not null default 250.00,
+  wallet_balance numeric(10,2) not null default 0.00,
   role text not null default 'rider' check (role in ('rider', 'driver', 'both')),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -154,12 +154,9 @@ begin
     coalesce(nullif(new.raw_user_meta_data->>'first_name', ''), 'Rider'),
     coalesce(new.raw_user_meta_data->>'middle_name', ''),
     coalesce(new.raw_user_meta_data->>'last_name', ''),
-    coalesce(nullif(new.raw_user_meta_data->>'phone', ''), '+63 917 000 0000')
+    coalesce(nullif(new.raw_user_meta_data->>'phone', ''), '')
   )
   on conflict (id) do nothing;
-
-  insert into public.emergency_contacts (user_id, name, relation, phone)
-  values (new.id, 'VSU Campus Security', '24/7 Campus Dispatch', '(053) 565-0600');
 
   return new;
 end;

@@ -13,15 +13,16 @@ import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GlassSurface } from '@/components/ui';
 import { RADII, SQUIRCLE, TABULAR_NUMS, TYPOGRAPHY } from '@/constants/theme';
-import { BAYBAY_PLACES, SAMPLE_DRIVERS } from '@/data/mockData';
+import { BAYBAY_PLACES } from '@/data/mockData';
 import { useAppTheme } from '@/hooks/useAppTheme';
 import { useRydeStore } from '@/store/useRydeStore';
-import { PlaceLocation } from '@/types';
+import { DriverProfile, PlaceLocation } from '@/types';
 
 export default function FavoritesScreen() {
   const { colors } = useAppTheme();
   const insets = useSafeAreaInsets();
   const favorites = useRydeStore((s) => s.favorites);
+  const trips = useRydeStore((s) => s.trips);
   const addFavorite = useRydeStore((s) => s.addFavorite);
   const removeFavorite = useRydeStore((s) => s.removeFavorite);
   const setDestination = useRydeStore((s) => s.setDestination);
@@ -30,9 +31,29 @@ export default function FavoritesScreen() {
 
   const availableToAdd = useMemo(
     () =>
-      BAYBAY_PLACES.filter((p) => !favorites.some((f) => f.id === p.id)),
+      BAYBAY_PLACES.filter(
+        (p) => !favorites.some((f) => f.name.toLowerCase() === p.name.toLowerCase())
+      ),
     [favorites]
   );
+
+  // Derive favorite drivers strictly from real completed trips rated 4★ or higher
+  const favoriteDrivers = useMemo(() => {
+    const map = new Map<string, DriverProfile>();
+    for (const t of trips) {
+      if (
+        t.status === 'Completed' &&
+        (t.ratingGiven ?? 0) >= 4 &&
+        t.driver.id &&
+        t.driver.id !== 'unassigned' &&
+        t.driver.id !== 'simulated-driver' &&
+        !map.has(t.driver.id)
+      ) {
+        map.set(t.driver.id, t.driver);
+      }
+    }
+    return [...map.values()];
+  }, [trips]);
 
   const handleQuickBook = (place: PlaceLocation) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
@@ -82,83 +103,96 @@ export default function FavoritesScreen() {
           SAVED PLACES
         </Text>
 
-        <View style={styles.list}>
-          {favorites.map((place) => (
-            <Pressable
-              key={place.id}
-              onPress={() => handleQuickBook(place)}
-              accessibilityRole="button"
-              accessibilityLabel={`Book ride to ${place.name}`}
-            >
-              <GlassSurface radius={RADII.lg} contentStyle={styles.placeCard}>
-                <View style={styles.placeLeft}>
-                  <View
-                    style={[
-                      styles.iconWrap,
-                      SQUIRCLE,
-                      { backgroundColor: colors.brandGoldSoft },
-                    ]}
-                  >
-                    <Ionicons
-                      name={
-                        place.category === 'home'
-                          ? 'home'
-                          : place.category === 'campus'
-                            ? 'school'
-                            : 'location'
-                      }
-                      size={19}
-                      color={colors.brandGoldDeep}
-                    />
-                  </View>
-                  <View style={styles.placeText}>
-                    <Text
-                      numberOfLines={1}
-                      style={[styles.placeName, { color: colors.textPrimary }]}
-                    >
-                      {place.name}
-                    </Text>
-                    <Text
-                      numberOfLines={1}
+        {favorites.length === 0 ? (
+          <GlassSurface radius={RADII.xl} contentStyle={styles.emptyCard}>
+            <Ionicons
+              name="heart-outline"
+              size={32}
+              color={colors.textTertiary}
+            />
+            <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>
+              No saved places yet
+            </Text>
+            <Text style={[styles.emptySub, { color: colors.textSecondary }]}>
+              Tap “Add Place” above to save your frequent stops for one-tap
+              booking.
+            </Text>
+          </GlassSurface>
+        ) : (
+          <View style={styles.list}>
+            {favorites.map((place) => (
+              <Pressable
+                key={place.id}
+                onPress={() => handleQuickBook(place)}
+                accessibilityRole="button"
+                accessibilityLabel={`Book ride to ${place.name}`}
+              >
+                <GlassSurface radius={RADII.lg} contentStyle={styles.placeCard}>
+                  <View style={styles.placeLeft}>
+                    <View
                       style={[
-                        styles.placeAddr,
+                        styles.iconWrap,
+                        SQUIRCLE,
+                        { backgroundColor: colors.brandGoldSoft },
+                      ]}
+                    >
+                      <Ionicons
+                        name={
+                          place.category === 'home'
+                            ? 'home'
+                            : place.category === 'campus'
+                              ? 'school'
+                              : 'location'
+                        }
+                        size={19}
+                        color={colors.brandGoldDeep}
+                      />
+                    </View>
+                    <View style={styles.placeText}>
+                      <Text
+                        numberOfLines={1}
+                        style={[styles.placeName, { color: colors.textPrimary }]}
+                      >
+                        {place.name}
+                      </Text>
+                      <Text
+                        numberOfLines={1}
+                        style={[
+                          styles.placeAddr,
+                          { color: colors.textSecondary },
+                        ]}
+                      >
+                        {place.address}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.placeRight}>
+                    <Text
+                      style={[
+                        styles.placeEta,
+                        TABULAR_NUMS,
                         { color: colors.textSecondary },
                       ]}
                     >
-                      {place.address}
+                      {place.etaMinutes} min
                     </Text>
+                    <Pressable
+                      onPress={() => {
+                        Haptics.selectionAsync().catch(() => {});
+                        removeFavorite(place.id);
+                      }}
+                      hitSlop={10}
+                      accessibilityLabel={`Remove ${place.name} from favorites`}
+                    >
+                      <Ionicons name="heart" size={18} color={colors.danger} />
+                    </Pressable>
                   </View>
-                </View>
-
-                <View style={styles.placeRight}>
-                  <Text
-                    style={[
-                      styles.placeEta,
-                      TABULAR_NUMS,
-                      { color: colors.textSecondary },
-                    ]}
-                  >
-                    {place.etaMinutes} min
-                  </Text>
-                  <Pressable
-                    onPress={() => {
-                      Haptics.selectionAsync().catch(() => {});
-                      removeFavorite(place.id);
-                    }}
-                    hitSlop={10}
-                    accessibilityLabel={`Remove ${place.name} from favorites`}
-                  >
-                    <Ionicons
-                      name="heart"
-                      size={18}
-                      color={colors.danger}
-                    />
-                  </Pressable>
-                </View>
-              </GlassSurface>
-            </Pressable>
-          ))}
-        </View>
+                </GlassSurface>
+              </Pressable>
+            ))}
+          </View>
+        )}
 
         <Text
           style={[
@@ -169,45 +203,62 @@ export default function FavoritesScreen() {
           FAVORITE DRIVERS
         </Text>
 
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.driversRow}
-        >
-          {SAMPLE_DRIVERS.map((drv) => (
-            <GlassSurface
-              key={drv.id}
-              radius={RADII.lg}
-              contentStyle={styles.driverCard}
-            >
-              <View
-                style={[
-                  styles.driverAvatar,
-                  { backgroundColor: colors.obsidian },
-                ]}
+        {favoriteDrivers.length === 0 ? (
+          <GlassSurface radius={RADII.xl} contentStyle={styles.emptyCard}>
+            <Ionicons
+              name="car-outline"
+              size={30}
+              color={colors.textTertiary}
+            />
+            <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>
+              No favorite drivers yet
+            </Text>
+            <Text style={[styles.emptySub, { color: colors.textSecondary }]}>
+              Drivers you rate 4★ or higher after completing a ride will appear
+              here.
+            </Text>
+          </GlassSurface>
+        ) : (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.driversRow}
+          >
+            {favoriteDrivers.map((drv) => (
+              <GlassSurface
+                key={drv.id}
+                radius={RADII.lg}
+                contentStyle={styles.driverCard}
               >
-                <Text style={[styles.driverInit, { color: colors.brandGold }]}>
-                  {drv.initials}
+                <View
+                  style={[
+                    styles.driverAvatar,
+                    { backgroundColor: colors.obsidian },
+                  ]}
+                >
+                  <Text style={[styles.driverInit, { color: colors.brandGold }]}>
+                    {drv.initials}
+                  </Text>
+                </View>
+                <Text
+                  numberOfLines={1}
+                  style={[styles.driverName, { color: colors.textPrimary }]}
+                >
+                  {drv.name}
                 </Text>
-              </View>
-              <Text
-                numberOfLines={1}
-                style={[styles.driverName, { color: colors.textPrimary }]}
-              >
-                {drv.name}
-              </Text>
-              <Text
-                style={[
-                  styles.driverRating,
-                  TABULAR_NUMS,
-                  { color: colors.textSecondary },
-                ]}
-              >
-                {drv.rating.toFixed(1)} ★ • {drv.vehicleModel}
-              </Text>
-            </GlassSurface>
-          ))}
-        </ScrollView>
+                <Text
+                  style={[
+                    styles.driverRating,
+                    TABULAR_NUMS,
+                    { color: colors.textSecondary },
+                  ]}
+                >
+                  {drv.rating.toFixed(1)} ★ • {drv.vehicleModel}
+                </Text>
+              </GlassSurface>
+            ))}
+          </ScrollView>
+        )}
       </ScrollView>
 
       {/* Add Place Modal */}
@@ -237,7 +288,7 @@ export default function FavoritesScreen() {
                 <Text
                   style={[styles.modalTitle, { color: colors.textPrimary }]}
                 >
-                  Save a Baybay Place
+                  Save a Place
                 </Text>
                 <Pressable onPress={() => setAddModalOpen(false)} hitSlop={10}>
                   <Ionicons name="close" size={22} color={colors.textPrimary} />
@@ -319,6 +370,20 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     letterSpacing: 0.6,
+  },
+  emptyCard: {
+    padding: 26,
+    alignItems: 'center',
+    gap: 8,
+  },
+  emptyTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  emptySub: {
+    fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 19,
   },
   list: {
     gap: 10,

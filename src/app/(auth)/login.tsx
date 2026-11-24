@@ -39,8 +39,9 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [firstName, setFirstName] = useState('');
+  const [middleName, setMiddleName] = useState('');
   const [lastName, setLastName] = useState('');
-  const [phone, setPhone] = useState('917 482 1094');
+  const [phone, setPhone] = useState('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [focusedField, setFocusedField] = useState<string | null>(null);
 
@@ -69,7 +70,7 @@ export default function LoginScreen() {
             email,
             password,
             firstName,
-            middleName: '',
+            middleName,
             lastName,
             phone,
           });
@@ -228,6 +229,29 @@ export default function LoginScreen() {
                   />
                 </GlassSurface>
               </View>
+            ) : null}
+
+            {mode === 'signup' ? (
+              <GlassSurface
+                radius={RADII.lg}
+                borderColor={
+                  focusedField === 'middle'
+                    ? colors.brandGoldDeep
+                    : colors.borderSpecular
+                }
+                contentStyle={styles.inputBox}
+              >
+                <TextInput
+                  value={middleName}
+                  onChangeText={setMiddleName}
+                  onFocus={() => setFocusedField('middle')}
+                  onBlur={() => setFocusedField(null)}
+                  placeholder="Middle name (optional)"
+                  placeholderTextColor={colors.textTertiary}
+                  autoCapitalize="words"
+                  style={[styles.input, { color: colors.textPrimary }]}
+                />
+              </GlassSurface>
             ) : null}
 
             {mode === 'signup' ? (

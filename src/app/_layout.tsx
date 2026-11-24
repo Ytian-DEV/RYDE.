@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { StyleSheet } from 'react-native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -6,9 +6,29 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
 import { useAppTheme } from '@/hooks/useAppTheme';
+import { supabase } from '@/lib/supabase';
+import { useRydeStore } from '@/store/useRydeStore';
 
 export default function RootLayout() {
   const { isDark, colors } = useAppTheme();
+  const hydrateFromSupabase = useRydeStore((s) => s.hydrateFromSupabase);
+  const resetUserState = useRydeStore((s) => s.resetUserState);
+
+  useEffect(() => {
+    if (!supabase) return;
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT' || !session) {
+        resetUserState();
+      } else if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
+        hydrateFromSupabase().catch(() => {});
+      }
+    });
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [hydrateFromSupabase, resetUserState]);
 
   return (
     <GestureHandlerRootView style={[styles.root, { backgroundColor: colors.canvas }]}>

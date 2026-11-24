@@ -390,10 +390,7 @@ export async function completeRidePaymentRpc(
   return mapRideRow(data as RideRow);
 }
 
-export async function fetchUserTrips(
-  userId: string,
-  fallbackDriver: DriverProfile
-): Promise<TripRecord[]> {
+export async function fetchUserTrips(userId: string): Promise<TripRecord[]> {
   if (!supabase) return [];
   const { data } = await supabase
     .from('rides')
@@ -402,16 +399,43 @@ export async function fetchUserTrips(
     .in('status', ['completed', 'cancelled'])
     .order('created_at', { ascending: false })
     .limit(40);
-  if (!data) return [];
-  return (data as RideRow[]).map((row) => {
+  if (!data || data.length === 0) return [];
+
+  const rows = data as RideRow[];
+  const driverIds = [
+    ...new Set(rows.map((r) => r.driver_id).filter((id): id is string => Boolean(id))),
+  ];
+  const driverEntries = await Promise.all(
+    driverIds.map(async (id) => [id, await fetchDriverProfileById(id)] as const)
+  );
+  const driverMap = new Map<string, DriverProfile>();
+  for (const [id, profile] of driverEntries) {
+    if (profile) driverMap.set(id, profile);
+  }
+
+  return rows.map((row) => {
     const ride = mapRideRow(row);
+    const resolvedDriver: DriverProfile =
+      (ride.driverId ? driverMap.get(ride.driverId) : null) ?? {
+        id: ride.driverId ?? 'unassigned',
+        name: 'Ryde Driver',
+        initials: 'RD',
+        rating: 5.0,
+        tripsCompleted: 0,
+        vehicleModel: ride.tierName,
+        vehicleColor: '',
+        plateNumber: '—',
+        phone: '',
+        verified: true,
+      };
+
     return {
       id: ride.id,
       category: ride.category,
       pickup: ride.pickup,
       destination: ride.destination,
       tierName: ride.tierName,
-      driver: fallbackDriver,
+      driver: resolvedDriver,
       paymentMethod: ride.paymentMethod,
       paymentReference: ride.paymentReference,
       baseFare: ride.baseFare,
