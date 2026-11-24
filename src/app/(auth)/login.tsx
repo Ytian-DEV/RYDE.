@@ -13,7 +13,7 @@ import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { BrandBadge, GlassSurface, PrimaryButton } from '@/components/ui';
+import { BrandBadge, GlassSurface, OAuthButton, PrimaryButton } from '@/components/ui';
 import { RADII, SQUIRCLE, TABULAR_NUMS, TYPOGRAPHY } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/useAppTheme';
 import { useRydeStore } from '@/store/useRydeStore';
@@ -30,9 +30,13 @@ export default function LoginScreen() {
   const insets = useSafeAreaInsets();
   const isLiveBackend = useRydeStore((s) => s.isLiveBackend);
   const authLoading = useRydeStore((s) => s.authLoading);
+  const oauthProviderLoading = useRydeStore((s) => s.oauthProviderLoading);
   const signInWithEmail = useRydeStore((s) => s.signInWithEmail);
   const signUpWithEmail = useRydeStore((s) => s.signUpWithEmail);
+  const signInWithOAuth = useRydeStore((s) => s.signInWithOAuth);
   const quickDemoSignIn = useRydeStore((s) => s.quickDemoSignIn);
+
+  const isBusy = authLoading || oauthProviderLoading !== null;
 
   const [mode, setMode] = useState<'signin' | 'signup'>('signin');
   const [email, setEmail] = useState('');
@@ -83,6 +87,24 @@ export default function LoginScreen() {
 
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
     router.replace('/(tabs)');
+  };
+
+  const handleOAuth = async (provider: 'google' | 'facebook') => {
+    if (isBusy) return;
+    setErrorMsg(null);
+    const err = await signInWithOAuth(provider);
+    if (err === '__CANCELLED__') {
+      return;
+    }
+    if (err) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
+      setErrorMsg(err);
+      return;
+    }
+    if (Platform.OS !== 'web') {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      router.replace('/(tabs)');
+    }
   };
 
   const handlePreviewMode = () => {
@@ -153,6 +175,7 @@ export default function LoginScreen() {
               return (
                 <Pressable
                   key={m}
+                  disabled={isBusy}
                   onPress={() => {
                     Haptics.selectionAsync().catch(() => {});
                     setMode(m);
@@ -162,6 +185,7 @@ export default function LoginScreen() {
                     styles.segmentBtn,
                     SQUIRCLE,
                     active && { backgroundColor: colors.brandGold },
+                    isBusy && { opacity: 0.6 },
                   ]}
                 >
                   <Text
@@ -200,10 +224,11 @@ export default function LoginScreen() {
                     onChangeText={setFirstName}
                     onFocus={() => setFocusedField('first')}
                     onBlur={() => setFocusedField(null)}
+                    editable={!isBusy}
                     placeholder="First name"
                     placeholderTextColor={colors.textTertiary}
                     autoCapitalize="words"
-                    style={[styles.input, { color: colors.textPrimary }]}
+                    style={[styles.input, { color: colors.textPrimary, opacity: isBusy ? 0.55 : 1 }]}
                   />
                 </GlassSurface>
 
@@ -222,10 +247,11 @@ export default function LoginScreen() {
                     onChangeText={setLastName}
                     onFocus={() => setFocusedField('last')}
                     onBlur={() => setFocusedField(null)}
+                    editable={!isBusy}
                     placeholder="Last name"
                     placeholderTextColor={colors.textTertiary}
                     autoCapitalize="words"
-                    style={[styles.input, { color: colors.textPrimary }]}
+                    style={[styles.input, { color: colors.textPrimary, opacity: isBusy ? 0.55 : 1 }]}
                   />
                 </GlassSurface>
               </View>
@@ -246,10 +272,11 @@ export default function LoginScreen() {
                   onChangeText={setMiddleName}
                   onFocus={() => setFocusedField('middle')}
                   onBlur={() => setFocusedField(null)}
+                  editable={!isBusy}
                   placeholder="Middle name (optional)"
                   placeholderTextColor={colors.textTertiary}
                   autoCapitalize="words"
-                  style={[styles.input, { color: colors.textPrimary }]}
+                  style={[styles.input, { color: colors.textPrimary, opacity: isBusy ? 0.55 : 1 }]}
                 />
               </GlassSurface>
             ) : null}
@@ -282,6 +309,7 @@ export default function LoginScreen() {
                   onChangeText={(txt) => setPhone(formatPhPhone(txt))}
                   onFocus={() => setFocusedField('phone')}
                   onBlur={() => setFocusedField(null)}
+                  editable={!isBusy}
                   placeholder="917 482 1094"
                   placeholderTextColor={colors.textTertiary}
                   keyboardType="phone-pad"
@@ -289,7 +317,7 @@ export default function LoginScreen() {
                   style={[
                     styles.input,
                     TABULAR_NUMS,
-                    { color: colors.textPrimary },
+                    { color: colors.textPrimary, opacity: isBusy ? 0.55 : 1 },
                   ]}
                 />
               </GlassSurface>
@@ -314,12 +342,13 @@ export default function LoginScreen() {
                 onChangeText={setEmail}
                 onFocus={() => setFocusedField('email')}
                 onBlur={() => setFocusedField(null)}
+                editable={!isBusy}
                 placeholder="Email address"
                 placeholderTextColor={colors.textTertiary}
                 keyboardType="email-address"
                 autoCapitalize="none"
                 autoCorrect={false}
-                style={[styles.input, { color: colors.textPrimary }]}
+                style={[styles.input, { color: colors.textPrimary, opacity: isBusy ? 0.55 : 1 }]}
               />
             </GlassSurface>
 
@@ -342,14 +371,16 @@ export default function LoginScreen() {
                 onChangeText={setPassword}
                 onFocus={() => setFocusedField('password')}
                 onBlur={() => setFocusedField(null)}
+                editable={!isBusy}
                 placeholder="Password (min. 6 characters)"
                 placeholderTextColor={colors.textTertiary}
                 secureTextEntry={!showPassword}
                 autoCapitalize="none"
-                style={[styles.input, { color: colors.textPrimary }]}
+                style={[styles.input, { color: colors.textPrimary, opacity: isBusy ? 0.55 : 1 }]}
               />
               <Pressable
                 onPress={() => setShowPassword((v) => !v)}
+                disabled={isBusy}
                 hitSlop={10}
                 accessibilityLabel="Toggle password visibility"
               >
@@ -378,23 +409,61 @@ export default function LoginScreen() {
           </View>
         </View>
 
-        {/* Thumb-zone CTA */}
+        {/* Thumb-zone CTA & Social OAuth */}
         <View style={styles.footer}>
           <PrimaryButton
             label={mode === 'signin' ? 'Sign In' : 'Create Account'}
             onPress={handleSubmit}
             loading={authLoading}
-            disabled={!canSubmit}
+            disabled={!canSubmit || isBusy}
           />
+
+          <View style={styles.dividerRow}>
+            <View
+              style={[styles.dividerLine, { backgroundColor: colors.borderSubtle }]}
+            />
+            <Text style={[styles.dividerText, { color: colors.textTertiary }]}>
+              {mode === 'signin' ? 'or sign in with' : 'or sign up with'}
+            </Text>
+            <View
+              style={[styles.dividerLine, { backgroundColor: colors.borderSubtle }]}
+            />
+          </View>
+
+          <View style={styles.oauthStack}>
+            <OAuthButton
+              provider="google"
+              label={
+                mode === 'signin'
+                  ? 'Sign in with Google'
+                  : 'Sign up with Google'
+              }
+              onPress={() => handleOAuth('google')}
+              loading={oauthProviderLoading === 'google'}
+              disabled={isBusy}
+            />
+            <OAuthButton
+              provider="facebook"
+              label={
+                mode === 'signin'
+                  ? 'Sign in with Facebook'
+                  : 'Sign up with Facebook'
+              }
+              onPress={() => handleOAuth('facebook')}
+              loading={oauthProviderLoading === 'facebook'}
+              disabled={isBusy}
+            />
+          </View>
 
           {!isLiveBackend ? (
             <Pressable
               onPress={handlePreviewMode}
+              disabled={isBusy}
               style={styles.guestBtn}
               accessibilityRole="button"
             >
               <Text style={[styles.guestText, { color: colors.textSecondary }]}>
-                Continue in Local Preview (add `.env` to enable live Supabase)
+                Continue as Guest
               </Text>
             </Pressable>
           ) : null}
@@ -517,7 +586,25 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   footer: {
+    gap: 14,
+  },
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 12,
+    marginVertical: 2,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+  },
+  dividerText: {
+    fontSize: 12,
+    fontWeight: '600',
+    letterSpacing: 0.2,
+  },
+  oauthStack: {
+    gap: 10,
   },
   guestBtn: {
     alignItems: 'center',

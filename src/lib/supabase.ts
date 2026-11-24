@@ -36,7 +36,8 @@ export const supabase: SupabaseClient | null = isSupabaseConfigured
         storage: Platform.OS === 'web' ? webStorage : AsyncStorage,
         autoRefreshToken: true,
         persistSession: true,
-        detectSessionInUrl: false,
+        detectSessionInUrl: Platform.OS === 'web',
+        flowType: 'pkce',
       },
     })
   : null;

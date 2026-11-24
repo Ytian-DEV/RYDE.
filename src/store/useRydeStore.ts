@@ -1,6 +1,10 @@
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as AuthSession from 'expo-auth-session';
+import * as WebBrowser from 'expo-web-browser';
 import { create } from 'zustand';
+
+WebBrowser.maybeCompleteAuthSession();
 import { calculateTierFare, RIDE_TIERS } from '@/data/mockData';
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 import {
@@ -120,6 +124,8 @@ interface RydeState {
   // Auth & User
   isAuthenticated: boolean;
   authLoading: boolean;
+  oauthProviderLoading: 'google' | 'facebook' | null;
+  hydrating: boolean;
   pendingPhone: string;
   user: UserProfile;
   driverVehicle: DriverVehicleProfile | null;
@@ -135,6 +141,7 @@ interface RydeState {
     lastName: string;
     phone: string;
   }) => Promise<string | null>;
+  signInWithOAuth: (provider: 'google' | 'facebook') => Promise<string | null>;
   completeAuth: (firstName: string, middleName: string, lastName: string) => void;
   quickDemoSignIn: () => void;
   signOut: () => Promise<void>;
@@ -218,6 +225,8 @@ export const useRydeStore = create<RydeState>((set, get) => ({
 
   isAuthenticated: false,
   authLoading: false,
+  oauthProviderLoading: null,
+  hydrating: false,
   pendingPhone: '',
   user: EMPTY_USER,
   driverVehicle: null,
@@ -252,17 +261,25 @@ export const useRydeStore = create<RydeState>((set, get) => ({
 
   hydrateFromSupabase: async () => {
     if (!supabase) return false;
+    set({ hydrating: true });
     try {
       const sessionRes = await supabase.auth.getSession();
       const session = sessionRes?.data?.session ?? null;
 
       if (!session?.user) {
         get().resetUserState();
+        set({ hydrating: false });
         return false;
       }
 
       const uid = session.user.id;
       const meta = (session.user.user_metadata ?? {}) as Record<string, unknown>;
+      const oauthFullName =
+        (typeof meta.full_name === 'string' && meta.full_name.trim()) ||
+        (typeof meta.name === 'string' && meta.name.trim()) ||
+        '';
+      const [oauthFirst, ...oauthRest] = oauthFullName.split(/\s+/).filter(Boolean);
+      const oauthLast = oauthRest.join(' ');
 
       // Clear any stale in-memory state from a prior user before populating
       const [profile, vehicle, favs, contacts, promos, txs, trips] =
@@ -279,9 +296,17 @@ export const useRydeStore = create<RydeState>((set, get) => ({
       const resolvedUser: UserProfile = profile ?? {
         id: uid,
         email: session.user.email ?? '',
-        firstName: typeof meta.first_name === 'string' ? meta.first_name : '',
+        firstName:
+          (typeof meta.first_name === 'string' && meta.first_name.trim()) ||
+          (typeof meta.given_name === 'string' && meta.given_name.trim()) ||
+          oauthFirst ||
+          '',
         middleName: typeof meta.middle_name === 'string' ? meta.middle_name : '',
-        lastName: typeof meta.last_name === 'string' ? meta.last_name : '',
+        lastName:
+          (typeof meta.last_name === 'string' && meta.last_name.trim()) ||
+          (typeof meta.family_name === 'string' && meta.family_name.trim()) ||
+          oauthLast ||
+          '',
         phone: typeof meta.phone === 'string' ? meta.phone : '',
         rating: 0,
         walletBalance: 0,
@@ -292,6 +317,7 @@ export const useRydeStore = create<RydeState>((set, get) => ({
       // Strictly bind to database results — NEVER fall back to preset mock arrays
       set({
         isAuthenticated: true,
+        hydrating: false,
         user: resolvedUser,
         driverVehicle: vehicle,
         favorites: favs,
@@ -310,6 +336,7 @@ export const useRydeStore = create<RydeState>((set, get) => ({
       });
       return true;
     } catch {
+      set({ hydrating: false });
       return false;
     }
   },
@@ -383,6 +410,117 @@ export const useRydeStore = create<RydeState>((set, get) => ({
     } catch (e) {
       set({ authLoading: false });
       return e instanceof Error ? e.message : 'Unable to create account';
+    }
+  },
+
+  signInWithOAuth: async (provider) => {
+    if (!supabase) {
+      return 'Authentication service is not configured yet.';
+    }
+    set({ oauthProviderLoading: provider });
+    try {
+      get().resetUserState();
+      await clearAnyLegacyLocalCache();
+
+      const redirectTo =
+        Platform.OS === 'web' && typeof window !== 'undefined'
+          ? `${window.location.origin}/auth/callback`
+          : AuthSession.makeRedirectUri({
+              scheme: 'ryde',
+              path: 'auth/callback',
+            });
+
+      const providerQueryParams: Record<string, string> | undefined =
+        provider === 'google'
+          ? { access_type: 'offline', prompt: 'select_account' }
+          : undefined;
+
+      if (Platform.OS === 'web') {
+        const { error } = await supabase.auth.signInWithOAuth({
+          provider,
+          options: {
+            redirectTo,
+            queryParams: providerQueryParams,
+          },
+        });
+        if (error) {
+          set({ oauthProviderLoading: null });
+          return error.message;
+        }
+        // Browser will redirect to provider; keep loading indicator active
+        return null;
+      }
+
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider,
+        options: {
+          redirectTo,
+          skipBrowserRedirect: true,
+          queryParams: providerQueryParams,
+        },
+      });
+
+      if (error || !data?.url) {
+        set({ oauthProviderLoading: null });
+        return error?.message ?? `Unable to start ${provider} sign-in.`;
+      }
+
+      const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
+
+      if (result.type === 'cancel' || result.type === 'dismiss') {
+        set({ oauthProviderLoading: null });
+        return '__CANCELLED__';
+      }
+
+      if (result.type !== 'success' || !result.url) {
+        set({ oauthProviderLoading: null });
+        return `Unable to complete ${provider} sign-in.`;
+      }
+
+      const parsed = new URL(result.url);
+      const errorDesc =
+        parsed.searchParams.get('error_description') ||
+        parsed.searchParams.get('error');
+      if (errorDesc) {
+        set({ oauthProviderLoading: null });
+        return decodeURIComponent(errorDesc);
+      }
+
+      const code = parsed.searchParams.get('code');
+      if (code) {
+        const { error: exchError } = await supabase.auth.exchangeCodeForSession(code);
+        if (exchError) {
+          set({ oauthProviderLoading: null });
+          return exchError.message;
+        }
+      } else if (parsed.hash) {
+        const hashParams = new URLSearchParams(parsed.hash.replace(/^#/, ''));
+        const accessToken = hashParams.get('access_token');
+        const refreshToken = hashParams.get('refresh_token');
+        if (accessToken && refreshToken) {
+          const { error: sessErr } = await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken,
+          });
+          if (sessErr) {
+            set({ oauthProviderLoading: null });
+            return sessErr.message;
+          }
+        } else {
+          set({ oauthProviderLoading: null });
+          return 'Missing authentication session from redirect.';
+        }
+      } else {
+        set({ oauthProviderLoading: null });
+        return 'Authentication did not return a valid session.';
+      }
+
+      await get().hydrateFromSupabase();
+      set({ oauthProviderLoading: null });
+      return null;
+    } catch (e) {
+      set({ oauthProviderLoading: null });
+      return e instanceof Error ? e.message : `Unable to continue with ${provider}`;
     }
   },
 

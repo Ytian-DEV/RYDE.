@@ -150,14 +150,30 @@ language plpgsql
 security definer
 set search_path = public
 as $$
+declare
+  v_full_name text := trim(coalesce(new.raw_user_meta_data->>'full_name', new.raw_user_meta_data->>'name', ''));
+  v_first text := coalesce(
+    nullif(trim(new.raw_user_meta_data->>'first_name'), ''),
+    nullif(trim(new.raw_user_meta_data->>'given_name'), ''),
+    nullif(split_part(v_full_name, ' ', 1), ''),
+    'Rider'
+  );
+  v_last text := coalesce(
+    nullif(trim(new.raw_user_meta_data->>'last_name'), ''),
+    nullif(trim(new.raw_user_meta_data->>'family_name'), ''),
+    case
+      when position(' ' in v_full_name) > 0 then trim(substring(v_full_name from position(' ' in v_full_name) + 1))
+      else ''
+    end
+  );
 begin
   insert into public.profiles (id, email, first_name, middle_name, last_name, phone)
   values (
     new.id,
     new.email,
-    coalesce(nullif(new.raw_user_meta_data->>'first_name', ''), 'Rider'),
+    v_first,
     coalesce(new.raw_user_meta_data->>'middle_name', ''),
-    coalesce(new.raw_user_meta_data->>'last_name', ''),
+    coalesce(v_last, ''),
     coalesce(nullif(new.raw_user_meta_data->>'phone', ''), '')
   )
   on conflict (id) do nothing;
