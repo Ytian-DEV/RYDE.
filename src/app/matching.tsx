@@ -159,7 +159,7 @@ export default function MatchingScreen() {
             </Text>
             <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
               {activeRide
-                ? 'Live request broadcast via Supabase Realtime! Online drivers can accept right now.'
+                ? 'Broadcasting your request to nearby drivers…'
                 : `Contacting top-rated drivers near ${pickup.name.split(',')[0]}…`}
             </Text>
           </View>

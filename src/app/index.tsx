@@ -19,7 +19,6 @@ export default function SplashScreen() {
   const { colors } = useAppTheme();
   const insets = useSafeAreaInsets();
   const isAuthenticated = useRydeStore((s) => s.isAuthenticated);
-  const isLiveBackend = useRydeStore((s) => s.isLiveBackend);
   const hydrateFromSupabase = useRydeStore((s) => s.hydrateFromSupabase);
 
   const glowScale = useSharedValue(0.92);
@@ -94,16 +93,12 @@ export default function SplashScreen() {
             style={[
               styles.liveDot,
               {
-                backgroundColor: isLiveBackend
-                  ? colors.success
-                  : colors.brandGoldDeep,
+                backgroundColor: colors.brandGoldDeep,
               },
             ]}
           />
           <Text style={[styles.footerText, { color: colors.textSecondary }]}>
-            {isLiveBackend
-              ? 'Connected to Supabase Realtime…'
-              : 'Connecting to Baybay riders…'}
+            Getting your rides ready…
           </Text>
         </GlassSurface>
       </View>

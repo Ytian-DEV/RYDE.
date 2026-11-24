@@ -274,7 +274,7 @@ export default function DriverDashboardScreen() {
               <Text style={[styles.vehicleSub, { color: colors.textSecondary }]}>
                 {hasConfiguredVehicle
                   ? isLiveBackend
-                    ? 'Supabase Realtime Dispatch'
+                    ? 'Live Dispatch Ready'
                     : 'Local Preview Dispatch'
                   : 'Tap the gear icon above to register your vehicle'}
               </Text>
@@ -394,8 +394,8 @@ export default function DriverDashboardScreen() {
                 <Text
                   style={[styles.emptyHint, { color: colors.textSecondary }]}
                 >
-                  Listening for live ride requests via Supabase Realtime… Book a
-                  ride as a Rider to see it appear here instantly!
+                  Listening for nearby ride requests… New trips booked by riders
+                  will appear here automatically.
                 </Text>
               ) : (
                 <ScrollView

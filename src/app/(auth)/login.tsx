@@ -132,23 +132,6 @@ export default function LoginScreen() {
         <View style={styles.topSection}>
           <View style={styles.brandRow}>
             <BrandBadge size={60} fontSize={19} />
-            <GlassSurface radius={RADII.pill} contentStyle={styles.statusChip}>
-              <View
-                style={[
-                  styles.statusDot,
-                  {
-                    backgroundColor: isLiveBackend
-                      ? colors.success
-                      : colors.brandGoldDeep,
-                  },
-                ]}
-              />
-              <Text
-                style={[styles.statusText, { color: colors.textSecondary }]}
-              >
-                {isLiveBackend ? 'Supabase Live' : 'Local Preview'}
-              </Text>
-            </GlassSurface>
           </View>
 
           <View style={styles.headingGroup}>
@@ -489,23 +472,6 @@ const styles = StyleSheet.create({
   brandRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  statusChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 7,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  statusText: {
-    fontSize: 12,
-    fontWeight: '600',
   },
   headingGroup: {
     gap: 6,
