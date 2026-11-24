@@ -151,14 +151,9 @@ export default function HomeMapScreen() {
         </Pressable>
 
         <GlassIconButton
-          icon="notifications-outline"
-          accessibilityLabel="Notifications"
-          onPress={() =>
-            Alert.alert(
-              'Ryde. Alerts',
-              'Promo code VSUFREE20 (₱20 off campus rides) is ready in your Profile.'
-            )
-          }
+          icon="car-sport-outline"
+          accessibilityLabel="Switch to Driver Mode"
+          onPress={() => router.push('/driver')}
         />
       </View>
 

@@ -1,11 +1,13 @@
 import React, { useEffect, useMemo } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import Animated, {
   Easing,
   useAnimatedStyle,
   useSharedValue,
+  withRepeat,
+  withSequence,
   withTiming,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -18,18 +20,25 @@ import {
   RIDE_TIERS,
 } from '@/data/mockData';
 import { useAppTheme } from '@/hooks/useAppTheme';
+import { supabase } from '@/lib/supabase';
+import { subscribeToRide } from '@/services/rydeApi';
 import { useRydeStore } from '@/store/useRydeStore';
 
 export default function MatchingScreen() {
   const { colors } = useAppTheme();
   const insets = useSafeAreaInsets();
 
+  const isLiveBackend = useRydeStore((s) => s.isLiveBackend);
+  const activeRide = useRydeStore((s) => s.activeRide);
   const pickup = useRydeStore((s) => s.pickup);
   const destination = useRydeStore((s) => s.destination) ?? BAYBAY_PLACES[1]!;
+  const routeGeometry = useRydeStore((s) => s.routeGeometry);
   const selectedTierId = useRydeStore((s) => s.selectedTierId);
   const selectedPayment = useRydeStore((s) => s.selectedPayment);
   const appliedPromo = useRydeStore((s) => s.appliedPromo);
   const assignDriver = useRydeStore((s) => s.assignDriver);
+  const syncLiveRideUpdate = useRydeStore((s) => s.syncLiveRideUpdate);
+  const appendRealtimeMessage = useRydeStore((s) => s.appendRealtimeMessage);
   const cancelActiveTrip = useRydeStore((s) => s.cancelActiveTrip);
 
   const tier = useMemo(
@@ -50,35 +59,80 @@ export default function MatchingScreen() {
         tier,
         pickup,
         destination,
-        appliedPromo?.discountAmount ?? 0
+        appliedPromo?.discountAmount ?? 0,
+        routeGeometry?.distanceKm
       ),
-    [tier, pickup, destination, appliedPromo]
+    [tier, pickup, destination, appliedPromo, routeGeometry]
   );
 
-  const progress = useSharedValue(0.15);
+  const progress = useSharedValue(0.2);
 
   useEffect(() => {
-    progress.value = withTiming(1, {
-      duration: 2400,
-      easing: Easing.inOut(Easing.cubic),
-    });
+    progress.value = withRepeat(
+      withSequence(
+        withTiming(0.92, { duration: 1500, easing: Easing.inOut(Easing.cubic) }),
+        withTiming(0.22, { duration: 1100, easing: Easing.inOut(Easing.cubic) })
+      ),
+      -1,
+      true
+    );
+  }, [progress]);
 
+  // Live Supabase Realtime listener waiting for a Driver to accept
+  useEffect(() => {
+    if (activeRide && isLiveBackend) {
+      const channel = subscribeToRide(
+        activeRide.id,
+        async (updatedRide) => {
+          await syncLiveRideUpdate(updatedRide);
+          if (
+            updatedRide.status === 'accepted' ||
+            updatedRide.status === 'arrived' ||
+            updatedRide.status === 'in_trip'
+          ) {
+            Haptics.notificationAsync(
+              Haptics.NotificationFeedbackType.Success
+            ).catch(() => {});
+            router.replace('/tracking');
+          }
+        },
+        (msg) => appendRealtimeMessage(msg)
+      );
+      return () => {
+        if (channel && supabase) {
+          supabase.removeChannel(channel);
+        }
+      };
+    }
+
+    // Local preview auto-match after 2.6s
     const timer = setTimeout(() => {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       assignDriver();
       router.replace('/tracking');
     }, 2600);
-
     return () => clearTimeout(timer);
-  }, [assignDriver, progress]);
+  }, [
+    activeRide,
+    isLiveBackend,
+    assignDriver,
+    syncLiveRideUpdate,
+    appendRealtimeMessage,
+  ]);
 
   const progressBarStyle = useAnimatedStyle(() => ({
     width: `${Math.round(progress.value * 100)}%`,
   }));
 
-  const handleCancel = () => {
+  const handleSimulateMatch = () => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    assignDriver();
+    router.replace('/tracking');
+  };
+
+  const handleCancel = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-    cancelActiveTrip();
+    await cancelActiveTrip();
     router.replace('/(tabs)');
   };
 
@@ -94,8 +148,9 @@ export default function MatchingScreen() {
       >
         <GlassSurface
           heavy
+          topOnly
           radius={RADII.sheet}
-          intensity={74}
+          intensity={80}
           contentStyle={styles.sheetContent}
         >
           <View style={styles.titleBlock}>
@@ -103,12 +158,12 @@ export default function MatchingScreen() {
               Finding your {tier.name}…
             </Text>
             <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-              Contacting top-rated drivers near {pickup.name.split(',')[0]} (3
-              drivers nearby)
+              {activeRide
+                ? 'Live request broadcast via Supabase Realtime! Online drivers can accept right now.'
+                : `Contacting top-rated drivers near ${pickup.name.split(',')[0]}…`}
             </Text>
           </View>
 
-          {/* Animated Progress Track */}
           <View style={[styles.track, { backgroundColor: colors.pill }]}>
             <Animated.View
               style={[
@@ -119,7 +174,6 @@ export default function MatchingScreen() {
             />
           </View>
 
-          {/* Route Summary Card */}
           <View
             style={[
               styles.summaryCard,
@@ -158,6 +212,39 @@ export default function MatchingScreen() {
             </Text>
           </View>
 
+          {activeRide ? (
+            <View style={styles.helperRow}>
+              <Pressable
+                onPress={() => router.push('/driver')}
+                style={[
+                  styles.helperPill,
+                  SQUIRCLE,
+                  { backgroundColor: colors.brandGoldSoft },
+                ]}
+              >
+                <Text
+                  style={[styles.helperText, { color: colors.textPrimary }]}
+                >
+                  Open Driver Mode
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={handleSimulateMatch}
+                style={[
+                  styles.helperPill,
+                  SQUIRCLE,
+                  { backgroundColor: colors.pill },
+                ]}
+              >
+                <Text
+                  style={[styles.helperText, { color: colors.textPrimary }]}
+                >
+                  Simulate Match
+                </Text>
+              </Pressable>
+            </View>
+          ) : null}
+
           <PrimaryButton
             label="Cancel Request"
             variant="danger"
@@ -175,15 +262,15 @@ const styles = StyleSheet.create({
   },
   sheetWrap: {
     position: 'absolute',
-    left: 10,
-    right: 10,
+    left: 0,
+    right: 0,
     bottom: 0,
   },
   sheetContent: {
     paddingHorizontal: 20,
     paddingTop: 20,
-    paddingBottom: 20,
-    gap: 16,
+    paddingBottom: 16,
+    gap: 14,
   },
   titleBlock: {
     gap: 6,
@@ -229,6 +316,21 @@ const styles = StyleSheet.create({
   },
   summaryPrice: {
     fontSize: 18,
+    fontWeight: '700',
+  },
+  helperRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  helperPill: {
+    flex: 1,
+    height: 44,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  helperText: {
+    fontSize: 13,
     fontWeight: '700',
   },
 });

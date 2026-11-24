@@ -1,19 +1,34 @@
-# Ryde. — iOS 26 Liquid Glass Mobile App (React Native + Expo)
+# Ryde. — Live Supabase + iOS 26 Liquid Glass Ride-Hailing App (Expo SDK 58)
 
-Production-ready cross-platform **iOS & Android** ride-hailing application designed to **Apple iOS 26 "Liquid Glass" & Human Interface Guidelines** standards and built with **React Native, Expo Router, TypeScript (strict mode), Reanimated, and `@gorhom/bottom-sheet`**.
+Production-ready cross-platform **iOS, Android & Web** ride-hailing application built with **React Native, Expo SDK 58, Expo Router, TypeScript (strict), Reanimated 4, OpenStreetMap + OSRM routing, and Supabase (Auth, Postgres, RLS, Realtime, Atomic Wallet Ledger)**.
 
-## Key Features
-- **iOS 26 Liquid Glass Design System**: Translucent `expo-blur` surfaces (`GlassSurface`), subtle 1px specular borders, `borderCurve: 'continuous'` squircle geometry, floating capsule tab bar (`FloatingTabBar`), and real-time **System / Light / Dark** appearance switching.
-- **Complete End-to-End Flows**:
-  - **Onboarding & Auth**: Brand Splash, Philippine `+63` Phone Login, 6-digit OTP Verification with live countdown, and Profile Setup.
-  - **Booking & Map**: Interactive Baybay / Visayas State University (VSU) stylized vector map, multi-detent `@gorhom/bottom-sheet`, service selector (`Motor`, `Taxi`, `Food`, `Services`), dual-stop Location Search & Tap-to-Pin mode, Ride Tier Comparison (`Ryde Motor`, `Ryde Economy`, `Ryde Comfort`, `Ryde XL`) with `tabular-nums` fares, and Payment (`GCash`, `Cash`, `Bank Transfer`, `Apple Pay`) & Pickup Schedule modal.
-  - **Live Ride & Checkout**: Animated concentric radar driver matching, Live Ride Tracking with moving driver marker, in-app Driver Chat modal, Share Trip, Safety SOS Center, itemized Receipt, 5-star Driver Rating, and Tip selector.
-  - **Activity, Favorites & Profile**: Filterable Activity history with one-tap Rebook & receipt viewer, Saved Places & Favorite Drivers, Ryde Wallet with instant top-up, Promo Vouchers (`VSUFREE20`, `RYDE26`), and Safety Contacts.
+## Live Full-Stack Capabilities
+- **Supabase Auth**: Email + Password + Philippine `+63` mobile number registration, persistent sessions (`AsyncStorage`), and automatic `profiles` creation trigger.
+- **Real OpenStreetMap + GPS + OSRM Routing (Zero API Keys)**:
+  - Live device GPS via `expo-location` with automatic reverse geocoding.
+  - Real interactive Leaflet map (CartoDB Voyager light & Dark Matter dark tiles) on iOS, Android, and Web with tap-to-pin anywhere.
+  - Live Nominatim place search across Baybay, VSU, and the Philippines + real OSRM road-snapped polylines, road distance (`km`), ETA (`min`), and dynamic Peso fares (`₱`).
+- **Rider App + Driver Mode (Supabase Realtime)**:
+  - Riders broadcast live ride requests (`public.rides`), track live driver status & GPS coordinates, and chat bidirectionally via Supabase Realtime (`public.ride_messages`).
+  - Tap **Switch to Driver Mode** (Profile tab or top-right car icon on Home) to configure your vehicle, go Online, accept incoming requests atomically via Postgres RPC, chat with the rider, and earn trip fares.
+- **Supabase Wallet Ledger & Safety**:
+  - Atomic `top_up_wallet` and `complete_ride_payment` Postgres RPCs, GCash/InstaPay reference tracking, saved favorite places, promo vouchers (`VSUFREE20`, `RYDE26`, `BAYBAY10`), and trusted SOS contacts.
+
+---
+
+## 3-Step Supabase Setup
+1. **Create a free Supabase project** at [supabase.com](https://supabase.com).
+2. **Run the database schema**: Open **Supabase Dashboard → SQL Editor → New query**, paste the contents of [supabase/schema.sql](supabase/schema.sql), and click **Run**.
+   - *(Tip for fastest testing: in **Authentication → Providers → Email**, disable **Confirm email** so new sign-ups log in immediately.)*
+3. **Add your `.env` file**: Copy `.env.example` to `.env` and fill in your credentials from **Project Settings → API**:
+   ```env
+   EXPO_PUBLIC_SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
+   EXPO_PUBLIC_SUPABASE_ANON_KEY=YOUR_SUPABASE_PUBLISHABLE_OR_ANON_KEY
+   ```
 
 ## Running Locally
 ```bash
-npm install
-npm run typecheck
-npx expo start
+npm install --legacy-peer-deps
+npx expo start --clear
 ```
-Press `i` for iOS Simulator, `a` for Android Emulator, or scan the QR code in Expo Go.
+Scan the QR code in **Expo Go (SDK 58)** or press **`w`** to preview in Chrome.
