@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Pressable,
@@ -55,12 +55,20 @@ export default function HomeMapScreen() {
   const setSelectedService = useRydeStore((s) => s.setSelectedService);
   const pickup = useRydeStore((s) => s.pickup);
   const destination = useRydeStore((s) => s.destination);
+  const routeGeometry = useRydeStore((s) => s.routeGeometry);
   const setDestination = useRydeStore((s) => s.setDestination);
+  const refreshRoute = useRydeStore((s) => s.refreshRoute);
+  const locateUserGps = useRydeStore((s) => s.locateUserGps);
+  const loadingGps = useRydeStore((s) => s.loadingGps);
   const selectedPayment = useRydeStore((s) => s.selectedPayment);
   const scheduledTimeLabel = useRydeStore((s) => s.scheduledTimeLabel);
   const favorites = useRydeStore((s) => s.favorites);
 
   const snapPoints = useMemo(() => ['52%', '74%'], []);
+
+  useEffect(() => {
+    refreshRoute().catch(() => {});
+  }, [refreshRoute]);
 
   const currentPayment = useMemo(
     () =>
@@ -91,17 +99,25 @@ export default function HomeMapScreen() {
     router.push('/ride-tiers');
   }, [destination]);
 
-  const handleRecenter = () => {
+  const handleRecenter = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     sheetRef.current?.snapToIndex(0);
+    const found = await locateUserGps();
+    if (!found) {
+      Alert.alert(
+        'Location Permission',
+        'Enable location permissions in your device settings to auto-detect your live GPS pickup point.'
+      );
+    }
   };
 
   return (
     <View style={[styles.container, { backgroundColor: colors.canvas }]}>
-      {/* Full-bleed Baybay / VSU Map */}
+      {/* Live Interactive OpenStreetMap */}
       <InteractiveMap
         pickup={pickup}
         destination={destination}
+        routeCoords={routeGeometry?.coords}
         showRoute={false}
       />
 
@@ -124,7 +140,7 @@ export default function HomeMapScreen() {
               numberOfLines={1}
               style={[styles.locPillText, { color: colors.textPrimary }]}
             >
-              {pickup.name}
+              {loadingGps ? 'Locating GPS…' : pickup.name}
             </Text>
             <Ionicons
               name="chevron-down"
@@ -146,11 +162,11 @@ export default function HomeMapScreen() {
         />
       </View>
 
-      {/* Floating Recenter Map Button */}
+      {/* Floating Live GPS Recenter Button */}
       <View style={styles.recenterWrap}>
         <GlassIconButton
           icon="locate"
-          accessibilityLabel="Recenter map to your location"
+          accessibilityLabel="Detect my current GPS location"
           onPress={handleRecenter}
         />
       </View>
@@ -177,7 +193,7 @@ export default function HomeMapScreen() {
           ]}
           showsVerticalScrollIndicator={false}
         >
-          {/* 4 Compact Squircle Service Tiles (Zero Clipping) */}
+          {/* 4 Compact Squircle Service Tiles */}
           <View style={styles.serviceGrid}>
             {SERVICE_ITEMS.map((item) => {
               const active = selectedService === item.id;
