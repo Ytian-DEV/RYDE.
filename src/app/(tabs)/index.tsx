@@ -37,13 +37,12 @@ const LiquidGlassSheetBackground: React.FC<BottomSheetBackgroundProps> = ({
 }) => (
   <GlassSurface
     heavy
+    fill
+    topOnly
     radius={RADII.sheet}
-    intensity={72}
+    intensity={80}
     style={[style, styles.sheetOuterShadow]}
-    contentStyle={StyleSheet.absoluteFill}
-  >
-    <View />
-  </GlassSurface>
+  />
 );
 
 export default function HomeMapScreen() {
@@ -431,7 +430,7 @@ const styles = StyleSheet.create({
     zIndex: 15,
   },
   bottomSheetOuter: {
-    marginHorizontal: 8,
+    marginHorizontal: 0,
   },
   sheetOuterShadow: {
     marginHorizontal: 0,
