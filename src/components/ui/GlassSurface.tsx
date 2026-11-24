@@ -66,16 +66,16 @@ export const GlassSurface: React.FC<GlassSurfaceProps> = ({
           shadowColor: colors.shadowColor,
           shadowOpacity: elevated ? (isDark ? 0.52 : 0.16) : 0,
         },
-        elevated && styles.shadow,
-        style,
+        elevated ? styles.shadow : null,
+        style ?? null,
       ]}
     >
       <View
         style={[
           styles.clipper,
-          fill && styles.fillClipper,
+          fill ? styles.fillClipper : null,
           SQUIRCLE,
-          webBlurStyle,
+          webBlurStyle ?? null,
           radiusStyle,
           {
             borderColor: specularBorder,
@@ -85,11 +85,10 @@ export const GlassSurface: React.FC<GlassSurfaceProps> = ({
           },
         ]}
       >
-        {Platform.OS !== 'web' ? (
+        {Platform.OS === 'ios' ? (
           <BlurView
-            intensity={Platform.OS === 'ios' ? intensity : Math.min(intensity, 40)}
+            intensity={intensity}
             tint={colors.blurTint}
-            experimentalBlurMethod="dimezisBlurView"
             style={StyleSheet.absoluteFill}
           />
         ) : null}

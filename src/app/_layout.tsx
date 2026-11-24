@@ -16,17 +16,16 @@ export default function RootLayout() {
 
   useEffect(() => {
     if (!supabase) return;
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((event, session) => {
+    const authListener = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_OUT' || !session) {
         resetUserState();
       } else if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
         hydrateFromSupabase().catch(() => {});
       }
     });
+    const subscription = authListener?.data?.subscription;
     return () => {
-      subscription.unsubscribe();
+      subscription?.unsubscribe();
     };
   }, [hydrateFromSupabase, resetUserState]);
 

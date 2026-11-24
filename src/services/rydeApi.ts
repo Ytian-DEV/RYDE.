@@ -159,14 +159,14 @@ export async function fetchUserProfile(userId: string): Promise<UserProfile | nu
   return {
     id: r.id,
     email: r.email ?? '',
-    firstName: r.first_name,
+    firstName: r.first_name ?? '',
     middleName: r.middle_name ?? '',
-    lastName: r.last_name,
-    phone: r.phone,
-    rating: Number(r.rating),
-    walletBalance: Number(r.wallet_balance),
-    totalTrips: r.total_trips,
-    role: r.role,
+    lastName: r.last_name ?? '',
+    phone: r.phone ?? '',
+    rating: Number(r.rating ?? 0),
+    walletBalance: Number(r.wallet_balance ?? 0),
+    totalTrips: Number(r.total_trips ?? 0),
+    role: r.role ?? 'rider',
   };
 }
 
@@ -193,9 +193,11 @@ export async function fetchDriverProfileById(
   const prof = profRes.data as ProfileRow | null;
   const drv = drvRes.data as DriverProfileRow | null;
   if (!prof) return null;
-  const fullName = `${prof.first_name} ${prof.last_name}`.trim() || 'Ryde Driver';
+  const first = prof.first_name ?? '';
+  const last = prof.last_name ?? '';
+  const fullName = `${first} ${last}`.trim() || 'Ryde Driver';
   const initials =
-    `${prof.first_name.charAt(0)}${prof.last_name.charAt(0) || prof.first_name.charAt(1)}`.toUpperCase() ||
+    `${first.charAt(0)}${last.charAt(0) || first.charAt(1)}`.toUpperCase() ||
     'RD';
   return {
     id: prof.id,
@@ -672,8 +674,12 @@ export function subscribeToRide(
         filter: `id=eq.${rideId}`,
       },
       (payload) => {
-        if (payload.new) {
-          onRideUpdate(mapRideRow(payload.new as RideRow));
+        try {
+          if (payload?.new && typeof payload.new === 'object') {
+            onRideUpdate(mapRideRow(payload.new as RideRow));
+          }
+        } catch {
+          // Ignore malformed realtime payloads
         }
       }
     )
@@ -686,16 +692,20 @@ export function subscribeToRide(
         filter: `ride_id=eq.${rideId}`,
       },
       (payload) => {
-        if (payload.new) {
-          const m = payload.new as RideMessageRow;
-          onNewMessage({
-            id: m.id,
-            rideId: m.ride_id,
-            senderId: m.sender_id,
-            sender: m.sender_role,
-            text: m.body,
-            timestamp: 'Now',
-          });
+        try {
+          if (payload?.new && typeof payload.new === 'object') {
+            const m = payload.new as RideMessageRow;
+            onNewMessage({
+              id: m.id,
+              rideId: m.ride_id,
+              senderId: m.sender_id,
+              sender: m.sender_role,
+              text: m.body,
+              timestamp: 'Now',
+            });
+          }
+        } catch {
+          // Ignore malformed realtime message payloads
         }
       }
     )

@@ -12,7 +12,7 @@ create table if not exists public.profiles (
   first_name text not null default 'Rider',
   middle_name text not null default '',
   last_name text not null default '',
-  phone text not null default '+63 917 000 0000',
+  phone text not null default '',
   rating numeric(3,2) not null default 5.00,
   total_trips integer not null default 0,
   wallet_balance numeric(10,2) not null default 0.00,
@@ -20,6 +20,10 @@ create table if not exists public.profiles (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+-- Ensure existing databases also inherit clean empty/zero defaults on re-run
+alter table public.profiles alter column phone set default '';
+alter table public.profiles alter column wallet_balance set default 0.00;
 
 -- 2. DRIVER PROFILES
 create table if not exists public.driver_profiles (
@@ -336,29 +340,37 @@ alter table public.emergency_contacts enable row level security;
 alter table public.promo_codes enable row level security;
 
 -- Profiles: read basic public info of riders/drivers, edit only own profile
+drop policy if exists "Profiles readable by authenticated users" on public.profiles;
 create policy "Profiles readable by authenticated users"
   on public.profiles for select to authenticated using (true);
+drop policy if exists "Users manage own profile" on public.profiles;
 create policy "Users manage own profile"
   on public.profiles for all to authenticated using (auth.uid() = id) with check (auth.uid() = id);
 
 -- Driver profiles: readable by authenticated, editable by owner
+drop policy if exists "Driver profiles readable by authenticated" on public.driver_profiles;
 create policy "Driver profiles readable by authenticated"
   on public.driver_profiles for select to authenticated using (true);
+drop policy if exists "Drivers manage own driver profile" on public.driver_profiles;
 create policy "Drivers manage own driver profile"
   on public.driver_profiles for all to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
 -- Rides: riders see own rides; online drivers can see searching rides + assigned rides
+drop policy if exists "Riders and drivers view relevant rides" on public.rides;
 create policy "Riders and drivers view relevant rides"
   on public.rides for select to authenticated
   using (auth.uid() = rider_id or auth.uid() = driver_id or status = 'searching');
+drop policy if exists "Riders create own rides" on public.rides;
 create policy "Riders create own rides"
   on public.rides for insert to authenticated
   with check (auth.uid() = rider_id);
+drop policy if exists "Participants update rides" on public.rides;
 create policy "Participants update rides"
   on public.rides for update to authenticated
   using (auth.uid() = rider_id or auth.uid() = driver_id);
 
 -- Ride Messages: participants only
+drop policy if exists "Ride participants read messages" on public.ride_messages;
 create policy "Ride participants read messages"
   on public.ride_messages for select to authenticated
   using (
@@ -368,25 +380,30 @@ create policy "Ride participants read messages"
         and (r.rider_id = auth.uid() or r.driver_id = auth.uid())
     )
   );
+drop policy if exists "Ride participants insert messages" on public.ride_messages;
 create policy "Ride participants insert messages"
   on public.ride_messages for insert to authenticated
   with check (auth.uid() = sender_id);
 
 -- Wallet transactions: owner only
+drop policy if exists "Users view own wallet transactions" on public.wallet_transactions;
 create policy "Users view own wallet transactions"
   on public.wallet_transactions for select to authenticated using (auth.uid() = user_id);
 
 -- Favorite places: owner only
+drop policy if exists "Users manage own favorite places" on public.favorite_places;
 create policy "Users manage own favorite places"
   on public.favorite_places for all to authenticated
   using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
 -- Emergency contacts: owner only
+drop policy if exists "Users manage own emergency contacts" on public.emergency_contacts;
 create policy "Users manage own emergency contacts"
   on public.emergency_contacts for all to authenticated
   using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
 -- Promo codes: readable by authenticated
+drop policy if exists "Authenticated users read active promos" on public.promo_codes;
 create policy "Authenticated users read active promos"
   on public.promo_codes for select to authenticated using (is_active = true);
 
