@@ -6,6 +6,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { router } from 'expo-router';
@@ -36,27 +37,56 @@ export default function ProfileScreen() {
   const { colors, isDark } = useAppTheme();
   const insets = useSafeAreaInsets();
 
+  const isLiveBackend = useRydeStore((s) => s.isLiveBackend);
   const user = useRydeStore((s) => s.user);
+  const driverVehicle = useRydeStore((s) => s.driverVehicle);
   const themeMode = useRydeStore((s) => s.themeMode);
   const setThemeMode = useRydeStore((s) => s.setThemeMode);
+  const walletTransactions = useRydeStore((s) => s.walletTransactions);
   const topUpWallet = useRydeStore((s) => s.topUpWallet);
   const promos = useRydeStore((s) => s.promos);
   const appliedPromo = useRydeStore((s) => s.appliedPromo);
   const applyPromo = useRydeStore((s) => s.applyPromo);
   const emergencyContacts = useRydeStore((s) => s.emergencyContacts);
+  const addEmergencyContact = useRydeStore((s) => s.addEmergencyContact);
   const signOut = useRydeStore((s) => s.signOut);
 
   const [paySheetOpen, setPaySheetOpen] = useState(false);
   const [topUpOpen, setTopUpOpen] = useState(false);
+  const [topUpMethod, setTopUpMethod] = useState<'gcash' | 'instapay'>('gcash');
+  const [topUpRef, setTopUpRef] = useState('');
   const [promoOpen, setPromoOpen] = useState(false);
   const [sosOpen, setSosOpen] = useState(false);
+  const [newContactName, setNewContactName] = useState('');
+  const [newContactRelation, setNewContactRelation] = useState('');
+  const [newContactPhone, setNewContactPhone] = useState('');
 
-  const initials = `${user.firstName.charAt(0)}${user.lastName.charAt(0)}`.toUpperCase();
+  const initials = `${user.firstName.charAt(0)}${user.lastName.charAt(0) || user.firstName.charAt(1)}`.toUpperCase() || 'RY';
 
-  const handleSignOut = () => {
+  const handleSignOut = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-    signOut();
+    await signOut();
     router.replace('/(auth)/login');
+  };
+
+  const handleTopUp = async (amt: number) => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    await topUpWallet(amt, topUpMethod, topUpRef.trim() || null);
+    setTopUpRef('');
+    setTopUpOpen(false);
+  };
+
+  const handleAddContact = async () => {
+    if (!newContactName.trim() || !newContactPhone.trim()) return;
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    await addEmergencyContact({
+      name: newContactName.trim(),
+      relation: newContactRelation.trim() || 'Family',
+      phone: newContactPhone.trim(),
+    });
+    setNewContactName('');
+    setNewContactRelation('');
+    setNewContactPhone('');
   };
 
   return (
@@ -71,18 +101,32 @@ export default function ProfileScreen() {
         ]}
         showsVerticalScrollIndicator={false}
       >
-        <Text style={[TYPOGRAPHY.largeTitle, { color: colors.textPrimary }]}>
-          Profile
-        </Text>
+        <View style={styles.titleRow}>
+          <Text style={[TYPOGRAPHY.largeTitle, { color: colors.textPrimary }]}>
+            Profile
+          </Text>
+          <GlassSurface radius={RADII.pill} contentStyle={styles.liveChip}>
+            <View
+              style={[
+                styles.liveDot,
+                {
+                  backgroundColor: isLiveBackend
+                    ? colors.success
+                    : colors.brandGoldDeep,
+                },
+              ]}
+            />
+            <Text style={[styles.liveText, { color: colors.textSecondary }]}>
+              {isLiveBackend ? 'Supabase Live' : 'Preview Mode'}
+            </Text>
+          </GlassSurface>
+        </View>
 
         {/* User Hero Liquid Glass Card */}
         <GlassSurface radius={RADII.xl} contentStyle={styles.heroCard}>
           <View style={styles.heroLeft}>
             <View
-              style={[
-                styles.avatar,
-                { backgroundColor: colors.brandGold },
-              ]}
+              style={[styles.avatar, { backgroundColor: colors.brandGold }]}
             >
               <Text style={[styles.avatarText, { color: colors.textOnGold }]}>
                 {initials}
@@ -121,6 +165,52 @@ export default function ProfileScreen() {
             </Text>
           </View>
         </GlassSurface>
+
+        {/* Switch to Driver Mode CTA Card */}
+        <Pressable
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+            router.push('/driver');
+          }}
+          accessibilityRole="button"
+        >
+          <GlassSurface
+            radius={RADII.xl}
+            borderColor={colors.brandGoldDeep}
+            contentStyle={styles.driverBanner}
+          >
+            <View style={styles.rowLeft}>
+              <View
+                style={[
+                  styles.settingIcon,
+                  SQUIRCLE,
+                  { backgroundColor: colors.brandGold },
+                ]}
+              >
+                <Ionicons name="car-sport" size={20} color={colors.textOnGold} />
+              </View>
+              <View style={styles.rowTextCol}>
+                <Text
+                  style={[styles.settingTitle, { color: colors.textPrimary }]}
+                >
+                  Switch to Driver Mode
+                </Text>
+                <Text
+                  style={[styles.settingSub, { color: colors.textSecondary }]}
+                >
+                  {driverVehicle?.isOnline
+                    ? 'Online now • Accepting live requests'
+                    : 'Go online, accept rides & earn via Realtime'}
+                </Text>
+              </View>
+            </View>
+            <Ionicons
+              name="chevron-forward"
+              size={18}
+              color={colors.brandGoldDeep}
+            />
+          </GlassSurface>
+        </Pressable>
 
         {/* Ryde Wallet Obsidian Card */}
         <View
@@ -246,7 +336,7 @@ export default function ProfileScreen() {
             {
               icon: 'wallet-outline' as const,
               title: 'Payment Methods',
-              sub: 'GCash, Cash, InstaPay, Apple Pay',
+              sub: 'GCash, Cash, InstaPay, Ryde Wallet',
               onPress: () => setPaySheetOpen(true),
             },
             {
@@ -344,13 +434,12 @@ export default function ProfileScreen() {
         />
       </ScrollView>
 
-      {/* Payment Methods Sheet */}
       <PaymentScheduleSheet
         visible={paySheetOpen}
         onClose={() => setPaySheetOpen(false)}
       />
 
-      {/* Top Up Modal */}
+      {/* Top Up + Ledger Modal */}
       <Modal
         visible={topUpOpen}
         transparent
@@ -374,22 +463,56 @@ export default function ProfileScreen() {
               contentStyle={styles.modalBox}
             >
               <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>
-                Top Up Ryde Wallet
+                Ryde Wallet Top-Up & Ledger
               </Text>
-              <Text style={[styles.modalSub, { color: colors.textSecondary }]}>
-                Instant zero-fee cash-in via GCash or BPI InstaPay.
-              </Text>
+
+              <View style={styles.methodRow}>
+                {(['gcash', 'instapay'] as const).map((m) => (
+                  <Pressable
+                    key={m}
+                    onPress={() => setTopUpMethod(m)}
+                    style={[
+                      styles.methodChip,
+                      SQUIRCLE,
+                      {
+                        backgroundColor:
+                          topUpMethod === m ? colors.brandGold : colors.pill,
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={{
+                        fontSize: 13,
+                        fontWeight: '700',
+                        color:
+                          topUpMethod === m
+                            ? colors.textOnGold
+                            : colors.textPrimary,
+                      }}
+                    >
+                      {m === 'gcash' ? 'GCash' : 'InstaPay QR'}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+
+              <TextInput
+                value={topUpRef}
+                onChangeText={setTopUpRef}
+                placeholder="Optional GCash / InstaPay Reference #"
+                placeholderTextColor={colors.textTertiary}
+                style={[
+                  styles.modalInput,
+                  SQUIRCLE,
+                  { backgroundColor: colors.pill, color: colors.textPrimary },
+                ]}
+              />
+
               <View style={styles.amountGrid}>
                 {TOP_UP_AMOUNTS.map((amt) => (
                   <Pressable
                     key={amt}
-                    onPress={() => {
-                      Haptics.notificationAsync(
-                        Haptics.NotificationFeedbackType.Success
-                      ).catch(() => {});
-                      topUpWallet(amt);
-                      setTopUpOpen(false);
-                    }}
+                    onPress={() => handleTopUp(amt)}
                     style={[
                       styles.amountTile,
                       SQUIRCLE,
@@ -408,8 +531,58 @@ export default function ProfileScreen() {
                   </Pressable>
                 ))}
               </View>
+
+              {walletTransactions.length > 0 ? (
+                <View style={styles.ledgerBox}>
+                  <Text
+                    style={[
+                      styles.ledgerHeading,
+                      { color: colors.textTertiary },
+                    ]}
+                  >
+                    RECENT WALLET LEDGER
+                  </Text>
+                  {walletTransactions.slice(0, 3).map((tx) => (
+                    <View key={tx.id} style={styles.ledgerRow}>
+                      <View style={styles.rowTextCol}>
+                        <Text
+                          numberOfLines={1}
+                          style={{
+                            fontSize: 13,
+                            fontWeight: '600',
+                            color: colors.textPrimary,
+                          }}
+                        >
+                          {tx.description}
+                        </Text>
+                        <Text
+                          style={{ fontSize: 11, color: colors.textSecondary }}
+                        >
+                          {tx.createdAt}
+                          {tx.referenceCode ? ` • Ref: ${tx.referenceCode}` : ''}
+                        </Text>
+                      </View>
+                      <Text
+                        style={[
+                          TABULAR_NUMS,
+                          {
+                            fontSize: 14,
+                            fontWeight: '700',
+                            color:
+                              tx.amount >= 0 ? colors.success : colors.danger,
+                          },
+                        ]}
+                      >
+                        {tx.amount >= 0 ? '+' : ''}
+                        {formatPeso(tx.amount)}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              ) : null}
+
               <PrimaryButton
-                label="Cancel"
+                label="Close"
                 variant="ghost"
                 onPress={() => setTopUpOpen(false)}
               />
@@ -507,7 +680,7 @@ export default function ProfileScreen() {
         </View>
       </Modal>
 
-      {/* Safety Contacts Modal */}
+      {/* Safety Contacts Modal (Real Supabase CRUD) */}
       <Modal
         visible={sosOpen}
         transparent
@@ -570,6 +743,51 @@ export default function ProfileScreen() {
                   />
                 </View>
               ))}
+
+              <TextInput
+                value={newContactName}
+                onChangeText={setNewContactName}
+                placeholder="Contact Name"
+                placeholderTextColor={colors.textTertiary}
+                style={[
+                  styles.modalInput,
+                  SQUIRCLE,
+                  { backgroundColor: colors.pill, color: colors.textPrimary },
+                ]}
+              />
+              <View style={styles.methodRow}>
+                <TextInput
+                  value={newContactRelation}
+                  onChangeText={setNewContactRelation}
+                  placeholder="Relation"
+                  placeholderTextColor={colors.textTertiary}
+                  style={[
+                    styles.modalInput,
+                    styles.flexOne,
+                    SQUIRCLE,
+                    { backgroundColor: colors.pill, color: colors.textPrimary },
+                  ]}
+                />
+                <TextInput
+                  value={newContactPhone}
+                  onChangeText={setNewContactPhone}
+                  placeholder="+63 917..."
+                  placeholderTextColor={colors.textTertiary}
+                  keyboardType="phone-pad"
+                  style={[
+                    styles.modalInput,
+                    styles.flexOne,
+                    SQUIRCLE,
+                    { backgroundColor: colors.pill, color: colors.textPrimary },
+                  ]}
+                />
+              </View>
+
+              <PrimaryButton
+                label="Add Trusted Contact"
+                disabled={!newContactName.trim() || !newContactPhone.trim()}
+                onPress={handleAddContact}
+              />
               <PrimaryButton
                 label="Close"
                 variant="ghost"
@@ -589,7 +807,28 @@ const styles = StyleSheet.create({
   },
   scroll: {
     paddingHorizontal: 22,
-    gap: 16,
+    gap: 14,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  liveChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  liveDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  liveText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
   heroCard: {
     flexDirection: 'row',
@@ -634,6 +873,13 @@ const styles = StyleSheet.create({
   tripsText: {
     fontSize: 12,
     fontWeight: '700',
+  },
+  driverBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
   },
   walletCard: {
     flexDirection: 'row',
@@ -743,14 +989,31 @@ const styles = StyleSheet.create({
   },
   modalBox: {
     padding: 20,
-    gap: 14,
+    gap: 12,
   },
   modalTitle: {
-    fontSize: 20,
+    fontSize: 19,
     fontWeight: '700',
   },
-  modalSub: {
-    fontSize: 13,
+  modalInput: {
+    height: 46,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    fontSize: 14,
+  },
+  methodRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  flexOne: {
+    flex: 1,
+  },
+  methodChip: {
+    flex: 1,
+    height: 38,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   amountGrid: {
     flexDirection: 'row',
@@ -759,14 +1022,29 @@ const styles = StyleSheet.create({
   },
   amountTile: {
     width: '48%',
-    height: 54,
-    borderRadius: 18,
+    height: 50,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
   },
   amountText: {
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: '700',
+  },
+  ledgerBox: {
+    gap: 8,
+    marginTop: 4,
+  },
+  ledgerHeading: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.6,
+  },
+  ledgerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 8,
   },
   promoRow: {
     flexDirection: 'row',

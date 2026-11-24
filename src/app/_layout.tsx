@@ -33,6 +33,7 @@ export default function RootLayout() {
             <Stack.Screen name="matching" options={{ animation: 'fade' }} />
             <Stack.Screen name="tracking" options={{ animation: 'fade' }} />
             <Stack.Screen name="summary" options={{ animation: 'slide_from_bottom' }} />
+            <Stack.Screen name="driver" options={{ animation: 'slide_from_bottom' }} />
           </Stack>
         </BottomSheetModalProvider>
       </SafeAreaProvider>

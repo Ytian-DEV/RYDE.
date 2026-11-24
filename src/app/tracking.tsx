@@ -23,21 +23,28 @@ import {
   RIDE_TIERS,
 } from '@/data/mockData';
 import { useAppTheme } from '@/hooks/useAppTheme';
+import { supabase } from '@/lib/supabase';
+import { subscribeToRide } from '@/services/rydeApi';
 import { useRydeStore } from '@/store/useRydeStore';
 
 export default function LiveTrackingScreen() {
   const { colors } = useAppTheme();
   const insets = useSafeAreaInsets();
 
+  const activeRide = useRydeStore((s) => s.activeRide);
   const pickup = useRydeStore((s) => s.pickup);
   const destination = useRydeStore((s) => s.destination) ?? BAYBAY_PLACES[1]!;
+  const routeGeometry = useRydeStore((s) => s.routeGeometry);
   const driver = useRydeStore((s) => s.assignedDriver);
+  const driverCoords = useRydeStore((s) => s.driverCoords);
   const tripStatus = useRydeStore((s) => s.tripStatus);
   const driverEtaMin = useRydeStore((s) => s.driverEtaMin);
   const selectedTierId = useRydeStore((s) => s.selectedTierId);
   const selectedPayment = useRydeStore((s) => s.selectedPayment);
   const appliedPromo = useRydeStore((s) => s.appliedPromo);
   const advanceTripPhase = useRydeStore((s) => s.advanceTripPhase);
+  const syncLiveRideUpdate = useRydeStore((s) => s.syncLiveRideUpdate);
+  const appendRealtimeMessage = useRydeStore((s) => s.appendRealtimeMessage);
   const chatMessages = useRydeStore((s) => s.chatMessages);
   const sendChatMessage = useRydeStore((s) => s.sendChatMessage);
   const emergencyContacts = useRydeStore((s) => s.emergencyContacts);
@@ -65,13 +72,41 @@ export default function LiveTrackingScreen() {
         tier,
         pickup,
         destination,
-        appliedPromo?.discountAmount ?? 0
+        appliedPromo?.discountAmount ?? 0,
+        routeGeometry?.distanceKm
       ),
-    [tier, pickup, destination, appliedPromo]
+    [tier, pickup, destination, appliedPromo, routeGeometry]
   );
 
-  // Smoothly animate driver along route
+  // Realtime sync with Driver updates & bidirectional chat
   useEffect(() => {
+    if (!activeRide) return;
+    const channel = subscribeToRide(
+      activeRide.id,
+      async (updatedRide) => {
+        await syncLiveRideUpdate(updatedRide);
+        if (updatedRide.status === 'completed') {
+          Haptics.notificationAsync(
+            Haptics.NotificationFeedbackType.Success
+          ).catch(() => {});
+          router.replace('/summary');
+        }
+      },
+      (msg) => {
+        Haptics.selectionAsync().catch(() => {});
+        appendRealtimeMessage(msg);
+      }
+    );
+    return () => {
+      if (channel && supabase) {
+        supabase.removeChannel(channel);
+      }
+    };
+  }, [activeRide, syncLiveRideUpdate, appendRealtimeMessage]);
+
+  // Smooth local animation fallback when driverCoords aren't streaming yet
+  useEffect(() => {
+    if (activeRide?.driverCoords) return;
     const id = setInterval(() => {
       setDriverProgress((prev) => {
         const cap = tripStatus === 'in_trip' ? 0.94 : 0.48;
@@ -80,16 +115,16 @@ export default function LiveTrackingScreen() {
       });
     }, 900);
     return () => clearInterval(id);
-  }, [tripStatus]);
+  }, [tripStatus, activeRide?.driverCoords]);
 
-  const handleAdvance = () => {
+  const handleAdvance = async () => {
     if (tripStatus === 'accepted' || tripStatus === 'arrived') {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-      advanceTripPhase();
+      await advanceTripPhase();
       setDriverProgress(0.55);
     } else {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-      advanceTripPhase();
+      await advanceTripPhase();
       router.replace('/summary');
     }
   };
@@ -101,28 +136,32 @@ export default function LiveTrackingScreen() {
         message: `I'm riding with ${driver.name} (${driver.vehicleModel} ${driver.plateNumber}) via Ryde. from ${pickup.name} to ${destination.name}. ETA: ${driverEtaMin} min.`,
       });
     } catch {
-      // User dismissed share sheet
+      // Dismissed share sheet
     }
   };
 
-  const handleSendChat = () => {
+  const handleSendChat = async () => {
     if (!draftMsg.trim()) return;
     Haptics.selectionAsync().catch(() => {});
-    sendChatMessage(draftMsg);
+    await sendChatMessage(draftMsg, 'rider');
     setDraftMsg('');
   };
 
   const bannerHeadline =
     tripStatus === 'in_trip'
       ? `Heading to ${destination.name.split(',')[0]}`
-      : `Kuya ${driver.name.split(' ')[0]} is arriving`;
+      : tripStatus === 'arrived'
+        ? `${driver.name.split(' ')[0]} is outside!`
+        : `Kuya ${driver.name.split(' ')[0]} is arriving`;
 
   return (
     <View style={[styles.container, { backgroundColor: colors.canvas }]}>
       <InteractiveMap
         pickup={pickup}
         destination={destination}
+        routeCoords={routeGeometry?.coords}
         showRoute
+        driverCoords={activeRide?.driverCoords ?? driverCoords}
         driverProgress={driverProgress}
       />
 
@@ -172,13 +211,14 @@ export default function LiveTrackingScreen() {
       <View
         style={[
           styles.sheetWrap,
-          { paddingBottom: Math.max(insets.bottom, 14) + 10 },
+          { paddingBottom: Math.max(insets.bottom, 14) + 8 },
         ]}
       >
         <GlassSurface
           heavy
+          topOnly
           radius={RADII.sheet}
-          intensity={76}
+          intensity={80}
           contentStyle={styles.sheetContent}
         >
           {/* Driver Profile Row */}
@@ -405,7 +445,7 @@ export default function LiveTrackingScreen() {
         </GlassSurface>
       </View>
 
-      {/* In-App Driver Chat Modal */}
+      {/* In-App Driver Chat Modal (Supabase Realtime) */}
       <Modal
         visible={chatOpen}
         transparent
@@ -625,14 +665,14 @@ const styles = StyleSheet.create({
   },
   sheetWrap: {
     position: 'absolute',
-    left: 10,
-    right: 10,
+    left: 0,
+    right: 0,
     bottom: 0,
   },
   sheetContent: {
     paddingHorizontal: 20,
     paddingTop: 18,
-    paddingBottom: 20,
+    paddingBottom: 16,
     gap: 16,
   },
   driverRow: {
