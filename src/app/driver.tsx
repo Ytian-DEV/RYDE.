@@ -52,12 +52,15 @@ export default function DriverDashboardScreen() {
   const [activeRoute, setActiveRoute] = useState<RouteGeometry | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
-  // Vehicle form state
-  const [vModel, setVModel] = useState(driverVehicle?.vehicleModel ?? 'Toyota Vios');
-  const [vColor, setVColor] = useState(driverVehicle?.vehicleColor ?? 'Silver');
-  const [vPlate, setVPlate] = useState(driverVehicle?.plateNumber ?? 'ABC 4821');
+  // Vehicle form state (empty until configured by the driver)
+  const [vModel, setVModel] = useState(driverVehicle?.vehicleModel ?? '');
+  const [vColor, setVColor] = useState(driverVehicle?.vehicleColor ?? '');
+  const [vPlate, setVPlate] = useState(driverVehicle?.plateNumber ?? '');
   const [vTier, setVTier] = useState<RideTierId>(driverVehicle?.tierId ?? 'economy');
 
+  const hasConfiguredVehicle = Boolean(
+    driverVehicle?.vehicleModel?.trim() && driverVehicle?.plateNumber?.trim()
+  );
   const isOnline = driverVehicle?.isOnline ?? false;
 
   // Realtime subscription to incoming searching rides
@@ -103,6 +106,10 @@ export default function DriverDashboardScreen() {
 
   const handleToggleOnline = async (val: boolean) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    if (val && !hasConfiguredVehicle) {
+      setVehicleModalOpen(true);
+      return;
+    }
     await toggleDriverOnline(val);
   };
 
@@ -150,11 +157,18 @@ export default function DriverDashboardScreen() {
   };
 
   const handleSaveVehicle = async () => {
+    if (!vModel.trim() || !vPlate.trim()) {
+      Alert.alert(
+        'Vehicle Details Required',
+        'Please enter both your vehicle model and plate number.'
+      );
+      return;
+    }
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
     await saveDriverVehicle({
-      vehicleModel: vModel.trim() || 'Toyota Vios',
-      vehicleColor: vColor.trim() || 'Silver',
-      plateNumber: vPlate.trim().toUpperCase() || 'ABC 4821',
+      vehicleModel: vModel.trim(),
+      vehicleColor: vColor.trim(),
+      plateNumber: vPlate.trim().toUpperCase(),
       tierId: vTier,
       isOnline,
       currentLat: driverVehicle?.currentLat ?? BAYBAY_PLACES[0]!.lat,
@@ -253,11 +267,16 @@ export default function DriverDashboardScreen() {
           <View style={styles.summaryRow}>
             <View>
               <Text style={[styles.vehicleTitle, { color: colors.textPrimary }]}>
-                {driverVehicle?.vehicleModel ?? 'Toyota Vios'} •{' '}
-                {driverVehicle?.plateNumber ?? 'ABC 4821'}
+                {hasConfiguredVehicle
+                  ? `${driverVehicle?.vehicleModel} • ${driverVehicle?.plateNumber}`
+                  : 'No vehicle configured yet'}
               </Text>
               <Text style={[styles.vehicleSub, { color: colors.textSecondary }]}>
-                {isLiveBackend ? 'Supabase Realtime Dispatch' : 'Local Preview Dispatch'}
+                {hasConfiguredVehicle
+                  ? isLiveBackend
+                    ? 'Supabase Realtime Dispatch'
+                    : 'Local Preview Dispatch'
+                  : 'Tap the gear icon above to register your vehicle'}
               </Text>
             </View>
             <View

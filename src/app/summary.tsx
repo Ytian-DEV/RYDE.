@@ -36,7 +36,7 @@ export default function RideSummaryScreen() {
   const completeTripAndRate = useRydeStore((s) => s.completeTripAndRate);
 
   const [rating, setRating] = useState(5);
-  const [tip, setTip] = useState(20);
+  const [tip, setTip] = useState(0);
 
   const tier = useMemo(
     () => RIDE_TIERS.find((t) => t.id === selectedTierId) ?? RIDE_TIERS[1]!,
@@ -63,9 +63,9 @@ export default function RideSummaryScreen() {
 
   const grandTotal = fare.totalFare + tip;
 
-  const handleDone = () => {
+  const handleDone = async () => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-    completeTripAndRate(rating, tip);
+    await completeTripAndRate(rating, tip);
     router.replace('/(tabs)');
   };
 

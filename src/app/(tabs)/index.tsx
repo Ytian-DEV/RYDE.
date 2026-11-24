@@ -24,7 +24,6 @@ import {
 } from '@/components/ui';
 import { RADII, SQUIRCLE, TABULAR_NUMS } from '@/constants/theme';
 import {
-  BAYBAY_PLACES,
   PAYMENT_METHODS,
   SERVICE_ITEMS,
 } from '@/data/mockData';
@@ -67,8 +66,13 @@ export default function HomeMapScreen() {
   const snapPoints = useMemo(() => ['52%', '74%'], []);
 
   useEffect(() => {
-    refreshRoute().catch(() => {});
-  }, [refreshRoute]);
+    if (pickup.id === 'gps-current') {
+      locateUserGps().catch(() => {});
+    }
+    if (destination) {
+      refreshRoute().catch(() => {});
+    }
+  }, [pickup.id, destination, locateUserGps, refreshRoute]);
 
   const currentPayment = useMemo(
     () =>
@@ -77,10 +81,7 @@ export default function HomeMapScreen() {
     [selectedPayment]
   );
 
-  const quickChips = useMemo(() => {
-    const base = favorites.slice(0, 3);
-    return base.length > 0 ? base : BAYBAY_PLACES.slice(0, 3);
-  }, [favorites]);
+  const quickChips = useMemo(() => favorites.slice(0, 3), [favorites]);
 
   const handleQuickDestination = useCallback(
     (place: PlaceLocation) => {
@@ -289,16 +290,18 @@ export default function HomeMapScreen() {
             />
           </Pressable>
 
-          {/* Quick Saved Destination Chips */}
+          {/* Quick Saved Destination Chips (strictly user's own saved favorites) */}
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.chipsScroll}
           >
-            {quickChips.map((place) => (
+            {quickChips.length === 0 ? (
               <Pressable
-                key={place.id}
-                onPress={() => handleQuickDestination(place)}
+                onPress={() => {
+                  Haptics.selectionAsync().catch(() => {});
+                  router.push('/(tabs)/favorites');
+                }}
                 style={[
                   styles.quickChip,
                   SQUIRCLE,
@@ -309,24 +312,50 @@ export default function HomeMapScreen() {
                 ]}
               >
                 <Ionicons
-                  name={
-                    place.category === 'home'
-                      ? 'home-outline'
-                      : place.category === 'campus'
-                        ? 'school-outline'
-                        : 'location-outline'
-                  }
-                  size={14}
+                  name="add-circle-outline"
+                  size={15}
                   color={colors.brandGoldDeep}
                 />
                 <Text
-                  numberOfLines={1}
-                  style={[styles.quickChipText, { color: colors.textPrimary }]}
+                  style={[styles.quickChipText, { color: colors.textSecondary }]}
                 >
-                  {place.name.split(',')[0]}
+                  Save a favorite place
                 </Text>
               </Pressable>
-            ))}
+            ) : (
+              quickChips.map((place) => (
+                <Pressable
+                  key={place.id}
+                  onPress={() => handleQuickDestination(place)}
+                  style={[
+                    styles.quickChip,
+                    SQUIRCLE,
+                    {
+                      backgroundColor: colors.elevated,
+                      borderColor: colors.borderSubtle,
+                    },
+                  ]}
+                >
+                  <Ionicons
+                    name={
+                      place.category === 'home'
+                        ? 'home-outline'
+                        : place.category === 'campus'
+                          ? 'school-outline'
+                          : 'location-outline'
+                    }
+                    size={14}
+                    color={colors.brandGoldDeep}
+                  />
+                  <Text
+                    numberOfLines={1}
+                    style={[styles.quickChipText, { color: colors.textPrimary }]}
+                  >
+                    {place.name.split(',')[0]}
+                  </Text>
+                </Pressable>
+              ))
+            )}
           </ScrollView>
 
           {/* Payment Method & Pickup Time Pills */}

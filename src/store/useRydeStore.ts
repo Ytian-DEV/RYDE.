@@ -1,15 +1,13 @@
+import { Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
-import {
-  BAYBAY_PLACES,
-  calculateTierFare,
-  INITIAL_CONTACTS,
-  INITIAL_PROMOS,
-  INITIAL_TRIPS,
-  RIDE_TIERS,
-  SAMPLE_DRIVERS,
-} from '@/data/mockData';
+import { calculateTierFare, RIDE_TIERS } from '@/data/mockData';
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
-import { fetchRoadRouteOSRM, getCurrentGpsLocation } from '@/services/geoService';
+import {
+  DEFAULT_CENTER,
+  fetchRoadRouteOSRM,
+  getCurrentGpsLocation,
+} from '@/services/geoService';
 import {
   acceptRideRpc,
   addEmergencyContactApi,
@@ -54,6 +52,65 @@ import {
   WalletTransaction,
 } from '@/types';
 
+const EMPTY_USER: UserProfile = {
+  id: '',
+  email: '',
+  firstName: '',
+  middleName: '',
+  lastName: '',
+  phone: '',
+  rating: 0,
+  walletBalance: 0,
+  totalTrips: 0,
+  role: 'rider',
+};
+
+const UNASSIGNED_DRIVER: DriverProfile = {
+  id: '',
+  name: 'Waiting for driver',
+  initials: 'RD',
+  rating: 0,
+  tripsCompleted: 0,
+  vehicleModel: '',
+  vehicleColor: '',
+  plateNumber: '—',
+  phone: '',
+  verified: false,
+};
+
+const DEFAULT_PICKUP: PlaceLocation = {
+  id: 'gps-current',
+  name: 'Current Location',
+  address: 'Tap GPS button to detect your street',
+  distanceKm: 0,
+  etaMinutes: 0,
+  lat: DEFAULT_CENTER.lat,
+  lng: DEFAULT_CENTER.lng,
+};
+
+async function clearAnyLegacyLocalCache(): Promise<void> {
+  try {
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < window.localStorage.length; i++) {
+        const key = window.localStorage.key(i);
+        if (key && key.startsWith('ryde-')) {
+          keysToRemove.push(key);
+        }
+      }
+      keysToRemove.forEach((k) => window.localStorage.removeItem(k));
+    } else {
+      const keys = await AsyncStorage.getAllKeys();
+      const rydeKeys = keys.filter((k) => k.startsWith('ryde-'));
+      if (rydeKeys.length > 0) {
+        await AsyncStorage.multiRemove(rydeKeys);
+      }
+    }
+  } catch {
+    // Storage cleanup is best-effort
+  }
+}
+
 interface RydeState {
   // Appearance & Backend Status
   themeMode: ThemeMode;
@@ -67,6 +124,7 @@ interface RydeState {
   user: UserProfile;
   driverVehicle: DriverVehicleProfile | null;
   setPendingPhone: (phone: string) => void;
+  resetUserState: () => void;
   hydrateFromSupabase: () => Promise<boolean>;
   signInWithEmail: (email: string, password: string) => Promise<string | null>;
   signUpWithEmail: (payload: {
@@ -135,12 +193,14 @@ interface RydeState {
   openRequests: LiveRide[];
   driverActiveRide: LiveRide | null;
   refreshOpenRequests: () => Promise<void>;
-  saveDriverVehicle: (vehicle: Omit<DriverVehicleProfile, 'userId' | 'totalEarnings' | 'verified'>) => Promise<void>;
+  saveDriverVehicle: (
+    vehicle: Omit<DriverVehicleProfile, 'userId' | 'totalEarnings' | 'verified'>
+  ) => Promise<void>;
   toggleDriverOnline: (online: boolean) => Promise<void>;
   acceptRideAsDriver: (rideId: string) => Promise<boolean>;
   updateDriverRideStage: (nextStatus: TripStatus, coords?: LatLng) => Promise<void>;
 
-  // History, Favorites, Safety & Promos
+  // History, Favorites, Safety & Promos (Strictly DB-backed, empty by default)
   trips: TripRecord[];
   favorites: PlaceLocation[];
   promos: PromoCode[];
@@ -151,28 +211,6 @@ interface RydeState {
   rebookTrip: (trip: TripRecord) => void;
 }
 
-const DEFAULT_USER: UserProfile = {
-  id: 'local-demo-user',
-  email: 'chris@ryde.ph',
-  firstName: 'Chris',
-  middleName: '',
-  lastName: 'Mendoza',
-  phone: '+63 917 482 1094',
-  rating: 4.95,
-  walletBalance: 420.0,
-  totalTrips: 42,
-  role: 'both',
-};
-
-const INITIAL_CHAT: ChatMessage[] = [
-  {
-    id: 'msg-1',
-    sender: 'driver',
-    text: 'Maayong adlaw! On my way to your pickup point now.',
-    timestamp: 'Just now',
-  },
-];
-
 export const useRydeStore = create<RydeState>((set, get) => ({
   themeMode: 'system',
   setThemeMode: (themeMode) => set({ themeMode }),
@@ -180,12 +218,37 @@ export const useRydeStore = create<RydeState>((set, get) => ({
 
   isAuthenticated: false,
   authLoading: false,
-  pendingPhone: '917 482 1094',
-  user: DEFAULT_USER,
+  pendingPhone: '',
+  user: EMPTY_USER,
   driverVehicle: null,
   walletTransactions: [],
 
   setPendingPhone: (pendingPhone) => set({ pendingPhone }),
+
+  resetUserState: () =>
+    set({
+      isAuthenticated: false,
+      pendingPhone: '',
+      user: EMPTY_USER,
+      driverVehicle: null,
+      walletTransactions: [],
+      destination: null,
+      routeGeometry: null,
+      paymentReference: '',
+      appliedPromo: null,
+      activeRide: null,
+      tripStatus: 'idle',
+      assignedDriver: UNASSIGNED_DRIVER,
+      driverEtaMin: 0,
+      driverCoords: null,
+      chatMessages: [],
+      openRequests: [],
+      driverActiveRide: null,
+      trips: [],
+      favorites: [],
+      promos: [],
+      emergencyContacts: [],
+    }),
 
   hydrateFromSupabase: async () => {
     if (!supabase) return false;
@@ -193,12 +256,16 @@ export const useRydeStore = create<RydeState>((set, get) => ({
       const {
         data: { session },
       } = await supabase.auth.getSession();
+
       if (!session?.user) {
-        set({ isAuthenticated: false });
+        get().resetUserState();
         return false;
       }
 
       const uid = session.user.id;
+      const meta = (session.user.user_metadata ?? {}) as Record<string, unknown>;
+
+      // Clear any stale in-memory state from a prior user before populating
       const [profile, vehicle, favs, contacts, promos, txs, trips] =
         await Promise.all([
           fetchUserProfile(uid),
@@ -207,23 +274,41 @@ export const useRydeStore = create<RydeState>((set, get) => ({
           fetchEmergencyContacts(uid),
           fetchActivePromos(),
           fetchWalletTransactions(uid),
-          fetchUserTrips(uid, SAMPLE_DRIVERS[0]!),
+          fetchUserTrips(uid),
         ]);
 
-      set((state) => ({
+      const resolvedUser: UserProfile = profile ?? {
+        id: uid,
+        email: session.user.email ?? '',
+        firstName: typeof meta.first_name === 'string' ? meta.first_name : '',
+        middleName: typeof meta.middle_name === 'string' ? meta.middle_name : '',
+        lastName: typeof meta.last_name === 'string' ? meta.last_name : '',
+        phone: typeof meta.phone === 'string' ? meta.phone : '',
+        rating: 0,
+        walletBalance: 0,
+        totalTrips: 0,
+        role: 'rider',
+      };
+
+      // Strictly bind to database results — NEVER fall back to preset mock arrays
+      set({
         isAuthenticated: true,
-        user: profile ?? {
-          ...state.user,
-          id: uid,
-          email: session.user.email ?? state.user.email,
-        },
+        user: resolvedUser,
         driverVehicle: vehicle,
-        favorites: favs.length > 0 ? favs : state.favorites,
-        emergencyContacts: contacts.length > 0 ? contacts : state.emergencyContacts,
-        promos: promos.length > 0 ? promos : state.promos,
+        favorites: favs,
+        emergencyContacts: contacts,
+        promos,
         walletTransactions: txs,
-        trips: trips.length > 0 ? trips : state.trips,
-      }));
+        trips,
+        destination: null,
+        routeGeometry: null,
+        appliedPromo: null,
+        activeRide: null,
+        driverActiveRide: null,
+        tripStatus: 'idle',
+        assignedDriver: UNASSIGNED_DRIVER,
+        chatMessages: [],
+      });
       return true;
     } catch {
       return false;
@@ -232,11 +317,13 @@ export const useRydeStore = create<RydeState>((set, get) => ({
 
   signInWithEmail: async (email, password) => {
     if (!supabase) {
-      set({ isAuthenticated: true });
-      return null;
+      return 'Supabase is not configured. Add EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY to .env.';
     }
     set({ authLoading: true });
     try {
+      get().resetUserState();
+      await clearAnyLegacyLocalCache();
+
       const { error } = await supabase.auth.signInWithPassword({
         email: email.trim(),
         password,
@@ -263,11 +350,13 @@ export const useRydeStore = create<RydeState>((set, get) => ({
     phone,
   }) => {
     if (!supabase) {
-      get().completeAuth(firstName, middleName, lastName);
-      return null;
+      return 'Supabase is not configured. Add EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY to .env.';
     }
     set({ authLoading: true });
     try {
+      get().resetUserState();
+      await clearAnyLegacyLocalCache();
+
       const { data, error } = await supabase.auth.signUp({
         email: email.trim(),
         password,
@@ -300,8 +389,11 @@ export const useRydeStore = create<RydeState>((set, get) => ({
 
   completeAuth: (firstName, middleName, lastName) => {
     const state = get();
-    const updatedPhone = `+63 ${state.pendingPhone.trim() || '917 482 1094'}`;
-    if (supabase && state.user.id !== 'local-demo-user') {
+    const updatedPhone = state.pendingPhone.trim()
+      ? `+63 ${state.pendingPhone.trim()}`
+      : state.user.phone;
+
+    if (supabase && state.user.id) {
       updateUserProfile(state.user.id, {
         first_name: firstName.trim() || state.user.firstName,
         middle_name: middleName.trim(),
@@ -313,35 +405,38 @@ export const useRydeStore = create<RydeState>((set, get) => ({
       isAuthenticated: true,
       user: {
         ...state.user,
-        firstName: firstName.trim() || 'Chris',
+        firstName: firstName.trim(),
         middleName: middleName.trim(),
-        lastName: lastName.trim() || 'Mendoza',
+        lastName: lastName.trim(),
         phone: updatedPhone,
       },
     });
   },
 
-  quickDemoSignIn: () =>
+  quickDemoSignIn: () => {
+    get().resetUserState();
     set({
       isAuthenticated: true,
-      user: DEFAULT_USER,
-    }),
+      user: {
+        ...EMPTY_USER,
+        id: 'guest-preview',
+        firstName: 'Guest',
+        lastName: 'Rider',
+      },
+    });
+  },
 
   signOut: async () => {
     if (supabase) {
       await supabase.auth.signOut().catch(() => {});
     }
-    set({
-      isAuthenticated: false,
-      tripStatus: 'idle',
-      activeRide: null,
-      driverActiveRide: null,
-    });
+    await clearAnyLegacyLocalCache();
+    get().resetUserState();
   },
 
   topUpWallet: async (amount, method = 'gcash', reference = null) => {
     const state = get();
-    if (supabase && state.user.id !== 'local-demo-user') {
+    if (supabase && state.user.id && state.user.id !== 'guest-preview') {
       const nextBal = await topUpWalletRpc(amount, method, reference);
       if (nextBal !== null) {
         const txs = await fetchWalletTransactions(state.user.id);
@@ -373,8 +468,8 @@ export const useRydeStore = create<RydeState>((set, get) => ({
   },
 
   selectedService: 'motor',
-  pickup: BAYBAY_PLACES[0]!,
-  destination: BAYBAY_PLACES[1]!,
+  pickup: DEFAULT_PICKUP,
+  destination: null,
   routeGeometry: null,
   loadingRoute: false,
   loadingGps: false,
@@ -393,7 +488,9 @@ export const useRydeStore = create<RydeState>((set, get) => ({
 
   setPickup: (pickup) => {
     set({ pickup });
-    get().refreshRoute().catch(() => {});
+    if (get().destination) {
+      get().refreshRoute().catch(() => {});
+    }
   },
 
   setDestination: (destination) => {
@@ -428,7 +525,9 @@ export const useRydeStore = create<RydeState>((set, get) => ({
     const loc = await getCurrentGpsLocation();
     if (loc) {
       set({ pickup: loc, loadingGps: false });
-      get().refreshRoute().catch(() => {});
+      if (get().destination) {
+        get().refreshRoute().catch(() => {});
+      }
       return loc;
     }
     set({ loadingGps: false });
@@ -444,16 +543,18 @@ export const useRydeStore = create<RydeState>((set, get) => ({
 
   activeRide: null,
   tripStatus: 'idle',
-  assignedDriver: SAMPLE_DRIVERS[0]!,
-  driverEtaMin: 3,
+  assignedDriver: UNASSIGNED_DRIVER,
+  driverEtaMin: 0,
   driverCoords: null,
-  chatMessages: INITIAL_CHAT,
+  chatMessages: [],
 
   startRideRequest: async () => {
     const state = get();
+    const dest = state.destination;
+    if (!dest) return null;
+
     const tier =
       RIDE_TIERS.find((t) => t.id === state.selectedTierId) ?? RIDE_TIERS[1]!;
-    const dest = state.destination ?? BAYBAY_PLACES[1]!;
     const route =
       state.routeGeometry ??
       (await fetchRoadRouteOSRM(
@@ -468,15 +569,8 @@ export const useRydeStore = create<RydeState>((set, get) => ({
       route.distanceKm
     );
 
-    const fallbackDriver =
-      tier.id === 'motor'
-        ? SAMPLE_DRIVERS[1]!
-        : tier.id === 'xl'
-          ? SAMPLE_DRIVERS[2]!
-          : SAMPLE_DRIVERS[0]!;
-
     let createdRide: LiveRide | null = null;
-    if (supabase && state.user.id !== 'local-demo-user') {
+    if (supabase && state.user.id && state.user.id !== 'guest-preview') {
       createdRide = await createRideRecord({
         riderId: state.user.id,
         category: state.selectedService,
@@ -501,22 +595,10 @@ export const useRydeStore = create<RydeState>((set, get) => ({
       routeGeometry: route,
       activeRide: createdRide,
       tripStatus: 'searching',
-      assignedDriver: fallbackDriver,
+      assignedDriver: UNASSIGNED_DRIVER,
       driverEtaMin: tier.etaMinutes,
-      driverCoords: {
-        lat: (state.pickup.lat + dest.lat) / 2,
-        lng: (state.pickup.lng + dest.lng) / 2,
-      },
-      chatMessages: createdRide
-        ? []
-        : [
-            {
-              id: 'msg-init',
-              sender: 'driver',
-              text: `Hi ${state.user.firstName}! Heading to ${state.pickup.name} now.`,
-              timestamp: 'Just now',
-            },
-          ],
+      driverCoords: null,
+      chatMessages: [],
     });
     return createdRide;
   },
@@ -533,7 +615,7 @@ export const useRydeStore = create<RydeState>((set, get) => ({
       tripStatus: ride.status,
       assignedDriver: drv,
       driverCoords: ride.driverCoords ?? get().driverCoords,
-      chatMessages: msgs.length > 0 ? msgs : get().chatMessages,
+      chatMessages: msgs,
     });
   },
 
@@ -544,15 +626,30 @@ export const useRydeStore = create<RydeState>((set, get) => ({
     }),
 
   assignDriver: () => {
-    const { pickup, destination } = get();
-    const dest = destination ?? BAYBAY_PLACES[1]!;
+    const { pickup, destination, selectedTierId } = get();
+    const tier =
+      RIDE_TIERS.find((t) => t.id === selectedTierId) ?? RIDE_TIERS[1]!;
     set({
       tripStatus: 'accepted',
-      driverEtaMin: 3,
-      driverCoords: {
-        lat: pickup.lat + (dest.lat - pickup.lat) * 0.25,
-        lng: pickup.lng + (dest.lng - pickup.lng) * 0.25,
+      driverEtaMin: tier.etaMinutes,
+      assignedDriver: {
+        id: 'simulated-driver',
+        name: 'Simulated Driver',
+        initials: 'SD',
+        rating: 5.0,
+        tripsCompleted: 1,
+        vehicleModel: tier.name,
+        vehicleColor: '',
+        plateNumber: 'TEST 001',
+        phone: '',
+        verified: true,
       },
+      driverCoords: destination
+        ? {
+            lat: pickup.lat + (destination.lat - pickup.lat) * 0.25,
+            lng: pickup.lng + (destination.lng - pickup.lng) * 0.25,
+          }
+        : { lat: pickup.lat, lng: pickup.lng },
     });
   },
 
@@ -562,23 +659,31 @@ export const useRydeStore = create<RydeState>((set, get) => ({
       state.tripStatus === 'accepted' || state.tripStatus === 'arrived'
         ? 'in_trip'
         : 'completed';
-    if (state.activeRide && supabase && state.user.id !== 'local-demo-user') {
+    if (
+      state.activeRide &&
+      supabase &&
+      state.user.id &&
+      state.user.id !== 'guest-preview'
+    ) {
       await updateRideStatus(state.activeRide.id, nextStatus);
     }
     set({
       tripStatus: nextStatus,
-      driverEtaMin: nextStatus === 'in_trip' ? state.routeGeometry?.durationMin ?? 6 : 0,
+      driverEtaMin:
+        nextStatus === 'in_trip' ? state.routeGeometry?.durationMin ?? 6 : 0,
     });
   },
 
   cancelActiveTrip: async () => {
     const { activeRide, user } = get();
-    if (activeRide && supabase && user.id !== 'local-demo-user') {
+    if (activeRide && supabase && user.id && user.id !== 'guest-preview') {
       await updateRideStatus(activeRide.id, 'cancelled');
     }
     set({
       tripStatus: 'idle',
       activeRide: null,
+      assignedDriver: UNASSIGNED_DRIVER,
+      chatMessages: [],
     });
   },
 
@@ -586,8 +691,14 @@ export const useRydeStore = create<RydeState>((set, get) => ({
     const trimmed = text.trim();
     if (!trimmed) return;
     const state = get();
-    const targetRide = role === 'driver' ? state.driverActiveRide : state.activeRide;
-    if (targetRide && supabase && state.user.id !== 'local-demo-user') {
+    const targetRide =
+      role === 'driver' ? state.driverActiveRide : state.activeRide;
+    if (
+      targetRide &&
+      supabase &&
+      state.user.id &&
+      state.user.id !== 'guest-preview'
+    ) {
       const sent = await sendRideMessageApi(
         targetRide.id,
         state.user.id,
@@ -616,7 +727,24 @@ export const useRydeStore = create<RydeState>((set, get) => ({
     const state = get();
     const tier =
       RIDE_TIERS.find((t) => t.id === state.selectedTierId) ?? RIDE_TIERS[1]!;
-    const dest = state.destination ?? BAYBAY_PLACES[1]!;
+    const dest = state.destination;
+
+    if (
+      state.activeRide &&
+      supabase &&
+      state.user.id &&
+      state.user.id !== 'guest-preview'
+    ) {
+      await completeRidePaymentRpc(state.activeRide.id, rating, tipAmount);
+      await get().hydrateFromSupabase();
+      return;
+    }
+
+    if (!dest) {
+      set({ activeRide: null, tripStatus: 'idle' });
+      return;
+    }
+
     const fare = calculateTierFare(
       tier,
       state.pickup,
@@ -624,18 +752,6 @@ export const useRydeStore = create<RydeState>((set, get) => ({
       state.appliedPromo?.discountAmount ?? 0,
       state.routeGeometry?.distanceKm
     );
-
-    if (state.activeRide && supabase && state.user.id !== 'local-demo-user') {
-      await completeRidePaymentRpc(state.activeRide.id, rating, tipAmount);
-      await get().hydrateFromSupabase();
-      set({
-        activeRide: null,
-        tripStatus: 'idle',
-        appliedPromo: null,
-        paymentReference: '',
-      });
-      return;
-    }
 
     const newRecord: TripRecord = {
       id: `trip-${Date.now()}`,
@@ -703,7 +819,7 @@ export const useRydeStore = create<RydeState>((set, get) => ({
       totalEarnings: state.driverVehicle?.totalEarnings ?? 0,
       verified: true,
     };
-    if (supabase && state.user.id !== 'local-demo-user') {
+    if (supabase && state.user.id && state.user.id !== 'guest-preview') {
       const saved = await upsertDriverVehicle(full);
       if (saved) {
         set({ driverVehicle: saved });
@@ -718,13 +834,13 @@ export const useRydeStore = create<RydeState>((set, get) => ({
     const gps = online ? await getCurrentGpsLocation() : null;
     const base: DriverVehicleProfile = state.driverVehicle ?? {
       userId: state.user.id,
-      vehicleModel: 'Toyota Vios',
-      vehicleColor: 'Silver',
-      plateNumber: 'ABC 4821',
+      vehicleModel: '',
+      vehicleColor: '',
+      plateNumber: '',
       tierId: 'economy',
       isOnline: online,
-      currentLat: gps?.lat ?? BAYBAY_PLACES[0]!.lat,
-      currentLng: gps?.lng ?? BAYBAY_PLACES[0]!.lng,
+      currentLat: gps?.lat ?? DEFAULT_CENTER.lat,
+      currentLng: gps?.lng ?? DEFAULT_CENTER.lng,
       totalEarnings: 0,
       verified: true,
     };
@@ -734,7 +850,7 @@ export const useRydeStore = create<RydeState>((set, get) => ({
       currentLat: gps?.lat ?? base.currentLat,
       currentLng: gps?.lng ?? base.currentLng,
     };
-    if (supabase && state.user.id !== 'local-demo-user') {
+    if (supabase && state.user.id && state.user.id !== 'guest-preview') {
       const saved = await upsertDriverVehicle(next);
       set({ driverVehicle: saved ?? next });
     } else {
@@ -747,9 +863,9 @@ export const useRydeStore = create<RydeState>((set, get) => ({
 
   acceptRideAsDriver: async (rideId) => {
     const state = get();
-    const lat = state.driverVehicle?.currentLat ?? BAYBAY_PLACES[0]!.lat;
-    const lng = state.driverVehicle?.currentLng ?? BAYBAY_PLACES[0]!.lng;
-    if (supabase && state.user.id !== 'local-demo-user') {
+    const lat = state.driverVehicle?.currentLat ?? DEFAULT_CENTER.lat;
+    const lng = state.driverVehicle?.currentLng ?? DEFAULT_CENTER.lng;
+    if (supabase && state.user.id && state.user.id !== 'guest-preview') {
       const accepted = await acceptRideRpc(rideId, lat, lng);
       if (!accepted) return false;
       const msgs = await fetchRideMessages(accepted.id);
@@ -763,7 +879,11 @@ export const useRydeStore = create<RydeState>((set, get) => ({
     const found = state.openRequests.find((r) => r.id === rideId);
     if (!found) return false;
     set({
-      driverActiveRide: { ...found, status: 'accepted', driverId: state.user.id },
+      driverActiveRide: {
+        ...found,
+        status: 'accepted',
+        driverId: state.user.id,
+      },
       openRequests: state.openRequests.filter((r) => r.id !== rideId),
     });
     return true;
@@ -773,7 +893,7 @@ export const useRydeStore = create<RydeState>((set, get) => ({
     const state = get();
     const active = state.driverActiveRide;
     if (!active) return;
-    if (supabase && state.user.id !== 'local-demo-user') {
+    if (supabase && state.user.id && state.user.id !== 'guest-preview') {
       const updated = await updateRideStatus(active.id, nextStatus, coords);
       if (nextStatus === 'completed' || nextStatus === 'cancelled') {
         set({ driverActiveRide: null });
@@ -799,20 +919,16 @@ export const useRydeStore = create<RydeState>((set, get) => ({
     }
   },
 
-  trips: INITIAL_TRIPS,
-  favorites: [
-    BAYBAY_PLACES[3]!,
-    BAYBAY_PLACES[1]!,
-    BAYBAY_PLACES[0]!,
-    BAYBAY_PLACES[6]!,
-  ],
-  promos: INITIAL_PROMOS,
-  emergencyContacts: INITIAL_CONTACTS,
+  // Strictly empty until fetched from Supabase for the authenticated user
+  trips: [],
+  favorites: [],
+  promos: [],
+  emergencyContacts: [],
 
   addFavorite: async (place) => {
     const state = get();
     if (state.favorites.some((f) => f.name === place.name)) return;
-    if (supabase && state.user.id !== 'local-demo-user') {
+    if (supabase && state.user.id && state.user.id !== 'guest-preview') {
       const saved = await saveFavoritePlaceApi(state.user.id, place);
       if (saved) {
         set({ favorites: [saved, ...state.favorites] });
@@ -824,7 +940,7 @@ export const useRydeStore = create<RydeState>((set, get) => ({
 
   removeFavorite: async (id) => {
     const state = get();
-    if (supabase && state.user.id !== 'local-demo-user') {
+    if (supabase && state.user.id && state.user.id !== 'guest-preview') {
       await deleteFavoritePlaceApi(id);
     }
     set({ favorites: state.favorites.filter((f) => f.id !== id) });
@@ -832,7 +948,7 @@ export const useRydeStore = create<RydeState>((set, get) => ({
 
   addEmergencyContact: async (contact) => {
     const state = get();
-    if (supabase && state.user.id !== 'local-demo-user') {
+    if (supabase && state.user.id && state.user.id !== 'guest-preview') {
       const saved = await addEmergencyContactApi(state.user.id, contact);
       if (saved) {
         set({ emergencyContacts: [...state.emergencyContacts, saved] });

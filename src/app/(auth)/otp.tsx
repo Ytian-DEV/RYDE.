@@ -23,7 +23,7 @@ export default function OtpScreen() {
   const insets = useSafeAreaInsets();
   const pendingPhone = useRydeStore((s) => s.pendingPhone);
 
-  const [code, setCode] = useState('4829');
+  const [code, setCode] = useState('');
   const [secondsLeft, setSecondsLeft] = useState(45);
   const inputRef = useRef<React.ComponentRef<typeof TextInput>>(null);
 
@@ -37,7 +37,7 @@ export default function OtpScreen() {
 
   const maskedPhone = (() => {
     const d = pendingPhone.replace(/\D/g, '');
-    if (d.length < 4) return '+63 917 ••• •094';
+    if (d.length < 4) return 'your phone number';
     return `+63 ${d.slice(0, 3)} ••• •${d.slice(-3)}`;
   })();
 

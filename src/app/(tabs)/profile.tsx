@@ -61,7 +61,24 @@ export default function ProfileScreen() {
   const [newContactRelation, setNewContactRelation] = useState('');
   const [newContactPhone, setNewContactPhone] = useState('');
 
-  const initials = `${user.firstName.charAt(0)}${user.lastName.charAt(0) || user.firstName.charAt(1)}`.toUpperCase() || 'RY';
+  const fullName =
+    [user.firstName, user.middleName, user.lastName]
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .join(' ') ||
+    user.email ||
+    'Ryde Rider';
+
+  const initials =
+    `${user.firstName.trim().charAt(0)}${user.lastName.trim().charAt(0) || user.firstName.trim().charAt(1)}`.toUpperCase() ||
+    (user.email.trim().charAt(0).toUpperCase() || 'RY');
+
+  const subtitleParts = [
+    user.phone || user.email,
+    user.totalTrips > 0 && user.rating > 0
+      ? `${user.rating.toFixed(2)} ★`
+      : 'New rider',
+  ].filter(Boolean);
 
   const handleSignOut = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
@@ -133,17 +150,21 @@ export default function ProfileScreen() {
               </Text>
             </View>
             <View style={styles.heroMeta}>
-              <Text style={[styles.userName, { color: colors.textPrimary }]}>
-                {user.firstName} {user.lastName}
+              <Text
+                numberOfLines={1}
+                style={[styles.userName, { color: colors.textPrimary }]}
+              >
+                {fullName}
               </Text>
               <Text
+                numberOfLines={1}
                 style={[
                   styles.userSub,
                   TABULAR_NUMS,
                   { color: colors.textSecondary },
                 ]}
               >
-                {user.phone} • {user.rating.toFixed(2)} ★
+                {subtitleParts.join(' • ')}
               </Text>
             </View>
           </View>
@@ -532,7 +553,18 @@ export default function ProfileScreen() {
                 ))}
               </View>
 
-              {walletTransactions.length > 0 ? (
+              {walletTransactions.length === 0 ? (
+                <Text
+                  style={{
+                    fontSize: 13,
+                    color: colors.textSecondary,
+                    textAlign: 'center',
+                    paddingVertical: 8,
+                  }}
+                >
+                  No wallet transactions yet.
+                </Text>
+              ) : (
                 <View style={styles.ledgerBox}>
                   <Text
                     style={[
@@ -579,7 +611,7 @@ export default function ProfileScreen() {
                     </View>
                   ))}
                 </View>
-              ) : null}
+              )}
 
               <PrimaryButton
                 label="Close"
@@ -617,6 +649,18 @@ export default function ProfileScreen() {
               <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>
                 Promo Codes & Vouchers
               </Text>
+              {promos.length === 0 ? (
+                <Text
+                  style={{
+                    fontSize: 13,
+                    color: colors.textSecondary,
+                    textAlign: 'center',
+                    paddingVertical: 12,
+                  }}
+                >
+                  No promo vouchers available right now.
+                </Text>
+              ) : null}
               {promos.map((p) => {
                 const active = appliedPromo?.id === p.id;
                 return (
@@ -706,6 +750,18 @@ export default function ProfileScreen() {
               <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>
                 Trusted Emergency Contacts
               </Text>
+              {emergencyContacts.length === 0 ? (
+                <Text
+                  style={{
+                    fontSize: 13,
+                    color: colors.textSecondary,
+                    paddingVertical: 6,
+                  }}
+                >
+                  No trusted contacts added yet. Add a contact below to share
+                  your live trip during emergencies.
+                </Text>
+              ) : null}
               {emergencyContacts.map((c) => (
                 <View
                   key={c.id}
