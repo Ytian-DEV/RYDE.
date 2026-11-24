@@ -10,12 +10,27 @@ export type RideTierId = 'motor' | 'economy' | 'comfort' | 'xl';
 
 export type TripStatus =
   | 'idle'
-  | 'matching'
-  | 'arriving'
+  | 'searching'
+  | 'accepted'
+  | 'arrived'
   | 'in_trip'
-  | 'completed';
+  | 'completed'
+  | 'cancelled';
+
+export interface LatLng {
+  lat: number;
+  lng: number;
+}
+
+export interface RouteGeometry {
+  coords: Array<[number, number]>; // [lat, lng] road polyline from OSRM
+  distanceKm: number;
+  durationMin: number;
+}
 
 export interface UserProfile {
+  id: string;
+  email: string;
   firstName: string;
   middleName: string;
   lastName: string;
@@ -23,6 +38,20 @@ export interface UserProfile {
   rating: number;
   walletBalance: number;
   totalTrips: number;
+  role: 'rider' | 'driver' | 'both';
+}
+
+export interface DriverVehicleProfile {
+  userId: string;
+  vehicleModel: string;
+  vehicleColor: string;
+  plateNumber: string;
+  tierId: RideTierId;
+  isOnline: boolean;
+  currentLat: number;
+  currentLng: number;
+  totalEarnings: number;
+  verified: boolean;
 }
 
 export interface PlaceLocation {
@@ -32,9 +61,11 @@ export interface PlaceLocation {
   distanceKm: number;
   etaMinutes: number;
   category?: 'home' | 'campus' | 'store' | 'landmark';
-  /** Normalized map coordinates (0..1) on our interactive Baybay/VSU vector map */
-  mapX: number;
-  mapY: number;
+  lat: number;
+  lng: number;
+  /** Normalized fallback coordinates for offline preview */
+  mapX?: number;
+  mapY?: number;
 }
 
 export interface ServiceItem {
@@ -80,9 +111,37 @@ export interface DriverProfile {
 
 export interface ChatMessage {
   id: string;
+  rideId?: string;
+  senderId?: string;
   sender: 'rider' | 'driver';
   text: string;
   timestamp: string;
+}
+
+export interface LiveRide {
+  id: string;
+  riderId: string;
+  driverId: string | null;
+  category: ServiceCategory;
+  tierId: RideTierId;
+  tierName: string;
+  status: TripStatus;
+  pickup: PlaceLocation;
+  destination: PlaceLocation;
+  driverCoords: LatLng | null;
+  distanceKm: number;
+  durationMin: number;
+  baseFare: number;
+  distanceFare: number;
+  promoDiscount: number;
+  promoCode: string | null;
+  tipAmount: number;
+  totalFare: number;
+  paymentMethod: PaymentMethodId;
+  paymentReference: string | null;
+  scheduledFor: string;
+  ratingGiven?: number | null;
+  createdAt: string;
 }
 
 export interface TripRecord {
@@ -93,6 +152,7 @@ export interface TripRecord {
   tierName: string;
   driver: DriverProfile;
   paymentMethod: PaymentMethodId;
+  paymentReference?: string | null;
   baseFare: number;
   distanceFare: number;
   bookingFee: number;
@@ -103,6 +163,16 @@ export interface TripRecord {
   dateLabel: string;
   status: 'Completed' | 'Delivered' | 'Cancelled';
   ratingGiven?: number;
+}
+
+export interface WalletTransaction {
+  id: string;
+  kind: 'top_up' | 'ride_payment' | 'driver_earning' | 'tip' | 'refund';
+  amount: number;
+  paymentMethod: string;
+  referenceCode: string | null;
+  description: string;
+  createdAt: string;
 }
 
 export interface PromoCode {

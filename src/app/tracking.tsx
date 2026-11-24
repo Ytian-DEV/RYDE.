@@ -83,7 +83,7 @@ export default function LiveTrackingScreen() {
   }, [tripStatus]);
 
   const handleAdvance = () => {
-    if (tripStatus === 'arriving') {
+    if (tripStatus === 'accepted' || tripStatus === 'arrived') {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       advanceTripPhase();
       setDriverProgress(0.55);
@@ -396,7 +396,7 @@ export default function LiveTrackingScreen() {
 
           <PrimaryButton
             label={
-              tripStatus === 'arriving'
+              tripStatus === 'accepted' || tripStatus === 'arrived'
                 ? 'Driver Picked Me Up — Start Trip'
                 : 'Arrive & View Receipt'
             }
