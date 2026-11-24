@@ -1,7 +1,18 @@
-import React, { useEffect, useMemo, useRef } from 'react';
-import { Platform, StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  ActivityIndicator,
+  Platform,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
+import Animated, { FadeOut } from 'react-native-reanimated';
 import { WebView, WebViewMessageEvent, WebViewProps } from 'react-native-webview';
 import { GlassSurface } from '@/components/ui/GlassSurface';
+import {
+  getFallbackRasterStyle,
+  getMapLibreStyleUrl,
+} from '@/config/mapConfig';
 import { RADII, TABULAR_NUMS } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/useAppTheme';
 import { DEFAULT_CENTER } from '@/services/geoService';
@@ -24,10 +35,9 @@ export interface InteractiveMapProps {
   onPinSelect?: (lat: number, lng: number) => void;
 }
 
-function buildLeafletHtml(isDark: boolean): string {
-  const tileUrl = isDark
-    ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-    : 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
+function buildMapLibreHtml(isDark: boolean): string {
+  const styleUrl = getMapLibreStyleUrl(isDark);
+  const fallbackStyleJson = JSON.stringify(getFallbackRasterStyle(isDark));
   const bg = isDark ? '#14181F' : '#ECEAE2';
 
   return `<!DOCTYPE html>
@@ -35,10 +45,18 @@ function buildLeafletHtml(isDark: boolean): string {
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no" />
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<link href="https://unpkg.com/maplibre-gl@5.2.0/dist/maplibre-gl.css" rel="stylesheet" />
 <style>
-  html, body, #map { margin: 0; padding: 0; width: 100%; height: 100%; background: ${bg}; overflow: hidden; }
-  .leaflet-control-attribution { font-size: 9px !important; opacity: 0.45; background: transparent !important; }
+  html, body, #map {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: ${bg}; overflow: hidden;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .maplibregl-ctrl-attrib {
+    font-size: 9px !important;
+    opacity: 0.48;
+    background: transparent !important;
+  }
   .ryde-pulse {
     width: 18px; height: 18px; border-radius: 50%;
     background: #007AFF; border: 3px solid #FFFFFF;
@@ -62,6 +80,7 @@ function buildLeafletHtml(isDark: boolean): string {
   .ryde-radar-wrap {
     position: relative; width: 120px; height: 120px;
     display: flex; align-items: center; justify-content: center;
+    pointer-events: none;
   }
   .ryde-radar-ring {
     position: absolute; width: 120px; height: 120px; border-radius: 50%;
@@ -81,22 +100,17 @@ function buildLeafletHtml(isDark: boolean): string {
 </head>
 <body>
 <div id="map"></div>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/maplibre-gl@5.2.0/dist/maplibre-gl.js"></script>
 <script>
-  const map = L.map('map', {
-    zoomControl: false,
-    attributionControl: true
-  }).setView([${DEFAULT_CENTER.lat}, ${DEFAULT_CENTER.lng}], 14);
+  const PRIMARY_STYLE = ${JSON.stringify(styleUrl)};
+  const FALLBACK_STYLE = ${fallbackStyleJson};
 
-  L.tileLayer('${tileUrl}', {
-    maxZoom: 19,
-    subdomains: 'abcd',
-    attribution: '&copy; OSM &copy; CARTO'
-  }).addTo(map);
-
-  let layerGroup = L.layerGroup().addTo(map);
-  let lastFitKey = '';
+  let usedFallback = false;
+  let mapReady = false;
+  let pendingState = null;
   let pinMode = false;
+  let lastFitKey = '';
+  let activeMarkers = [];
 
   function postToHost(payload) {
     const str = JSON.stringify(payload);
@@ -107,105 +121,216 @@ function buildLeafletHtml(isDark: boolean): string {
     }
   }
 
-  map.on('click', function(e) {
-    if (!pinMode) return;
-    postToHost({ type: 'pin', lat: e.latlng.lat, lng: e.latlng.lng });
+  const map = new maplibregl.Map({
+    container: 'map',
+    style: PRIMARY_STYLE,
+    center: [${DEFAULT_CENTER.lng}, ${DEFAULT_CENTER.lat}],
+    zoom: 14.2,
+    pitch: 0,
+    attributionControl: { compact: true }
   });
 
-  window.updateRydeMap = function(state) {
+  map.on('error', function(err) {
+    if (!usedFallback && !mapReady) {
+      usedFallback = true;
+      try {
+        map.setStyle(FALLBACK_STYLE);
+      } catch (e) {}
+    }
+  });
+
+  function ensureRouteLayers(isDark) {
+    if (!map.getSource('ryde-route')) {
+      map.addSource('ryde-route', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] }
+      });
+    }
+    if (!map.getLayer('ryde-route-casing')) {
+      map.addLayer({
+        id: 'ryde-route-casing',
+        type: 'line',
+        source: 'ryde-route',
+        layout: { 'line-join': 'round', 'line-cap': 'round' },
+        paint: {
+          'line-color': isDark ? '#0B0E14' : '#181C23',
+          'line-width': 9,
+          'line-opacity': 0.55
+        }
+      });
+    }
+    if (!map.getLayer('ryde-route-line')) {
+      map.addLayer({
+        id: 'ryde-route-line',
+        type: 'line',
+        source: 'ryde-route',
+        layout: { 'line-join': 'round', 'line-cap': 'round' },
+        paint: {
+          'line-color': isDark ? '#FFD95A' : '#E5B82E',
+          'line-width': 5,
+          'line-opacity': 0.96
+        }
+      });
+    }
+  }
+
+  function clearMarkers() {
+    for (let i = 0; i < activeMarkers.length; i++) {
+      activeMarkers[i].remove();
+    }
+    activeMarkers = [];
+  }
+
+  function makeEl(className, innerHtml) {
+    const el = document.createElement('div');
+    if (className) el.className = className;
+    if (innerHtml) el.innerHTML = innerHtml;
+    return el;
+  }
+
+  function applyState(state) {
+    if (!mapReady) {
+      pendingState = state;
+      return;
+    }
+
     pinMode = !!state.pinMode;
-    layerGroup.clearLayers();
+    clearMarkers();
+    ensureRouteLayers(!!state.isDark);
 
     const p = state.pickup;
     const d = state.destination;
-    const showRoute = !!state.showRoute;
-    const showRadar = !!state.showRadar;
-    const routeCoords = Array.isArray(state.routeCoords) && state.routeCoords.length >= 2
-      ? state.routeCoords
-      : (p && d ? [[p.lat, p.lng], [d.lat, d.lng]] : []);
+    const route = state.routeCoords || [];
+    const bounds = new maplibregl.LngLatBounds();
+    let hasBounds = false;
 
-    if (showRadar && p) {
-      const radarIcon = L.divIcon({
-        className: '',
-        html: '<div class="ryde-radar-wrap"><div class="ryde-radar-ring"></div><div class="ryde-radar-ring delay"></div><div class="ryde-radar-core"></div></div>',
-        iconSize: [120, 120],
-        iconAnchor: [60, 60]
+    const routeSource = map.getSource('ryde-route');
+    if (state.showRoute && route.length >= 2) {
+      const lngLatCoords = route.map(function(pt) { return [pt[1], pt[0]]; });
+      if (routeSource) {
+        routeSource.setData({
+          type: 'Feature',
+          geometry: { type: 'LineString', coordinates: lngLatCoords }
+        });
+      }
+      lngLatCoords.forEach(function(ll) {
+        bounds.extend(ll);
+        hasBounds = true;
       });
-      L.marker([p.lat, p.lng], { icon: radarIcon }).addTo(layerGroup);
-      const key = 'radar-' + p.lat.toFixed(4) + '-' + p.lng.toFixed(4);
-      if (key !== lastFitKey) {
-        lastFitKey = key;
-        map.setView([p.lat - 0.004, p.lng], 15, { animate: true });
-      }
-      return;
+    } else if (routeSource) {
+      routeSource.setData({ type: 'FeatureCollection', features: [] });
     }
 
-    if (showRoute && p && d && routeCoords.length >= 2) {
-      const routeColor = state.isDark ? '#FFD95A' : '#007AFF';
-      L.polyline(routeCoords, { color: routeColor, weight: 10, opacity: 0.24, lineCap: 'round' }).addTo(layerGroup);
-      const poly = L.polyline(routeCoords, { color: routeColor, weight: 5, opacity: 0.95, lineCap: 'round' }).addTo(layerGroup);
-
-      L.marker([p.lat, p.lng], {
-        icon: L.divIcon({ className: '', html: '<div class="ryde-pin-pickup"></div>', iconSize: [18, 18], iconAnchor: [9, 9] })
-      }).addTo(layerGroup);
-
-      L.marker([d.lat, d.lng], {
-        icon: L.divIcon({ className: '', html: '<div class="ryde-pin-dest"></div>', iconSize: [18, 18], iconAnchor: [9, 9] })
-      }).addTo(layerGroup);
-
-      if (state.driverPoint) {
-        L.marker([state.driverPoint.lat, state.driverPoint.lng], {
-          icon: L.divIcon({ className: '', html: '<div class="ryde-driver"></div>', iconSize: [24, 24], iconAnchor: [12, 12] })
-        }).addTo(layerGroup);
+    if (p && typeof p.lat === 'number' && typeof p.lng === 'number') {
+      const pLngLat = [p.lng, p.lat];
+      if (state.showRadar) {
+        const el = makeEl(
+          'ryde-radar-wrap',
+          '<div class="ryde-radar-ring"></div><div class="ryde-radar-ring delay"></div><div class="ryde-radar-core"></div>'
+        );
+        activeMarkers.push(
+          new maplibregl.Marker({ element: el, anchor: 'center' })
+            .setLngLat(pLngLat)
+            .addTo(map)
+        );
+      } else {
+        const el = makeEl(state.showRoute ? 'ryde-pin-pickup' : 'ryde-pulse');
+        activeMarkers.push(
+          new maplibregl.Marker({ element: el, anchor: 'center' })
+            .setLngLat(pLngLat)
+            .addTo(map)
+        );
       }
-
-      const key = 'route-' + p.lat.toFixed(4) + ',' + p.lng.toFixed(4) + '-' + d.lat.toFixed(4) + ',' + d.lng.toFixed(4);
-      if (key !== lastFitKey) {
-        lastFitKey = key;
-        map.fitBounds(poly.getBounds(), { paddingTopLeft: [48, 110], paddingBottomRight: [48, 360], maxZoom: 16 });
-      }
-      return;
+      bounds.extend(pLngLat);
+      hasBounds = true;
     }
 
-    if (p) {
-      L.marker([p.lat, p.lng], {
-        icon: L.divIcon({ className: '', html: '<div class="ryde-pulse"></div>', iconSize: [18, 18], iconAnchor: [9, 9] })
-      }).addTo(layerGroup);
+    if (d && typeof d.lat === 'number' && typeof d.lng === 'number' && state.showRoute) {
+      const dLngLat = [d.lng, d.lat];
+      const el = makeEl('ryde-pin-dest');
+      activeMarkers.push(
+        new maplibregl.Marker({ element: el, anchor: 'center' })
+          .setLngLat(dLngLat)
+          .addTo(map)
+      );
+      bounds.extend(dLngLat);
+      hasBounds = true;
+    }
 
-      const key = 'center-' + p.lat.toFixed(4) + ',' + p.lng.toFixed(4);
-      if (key !== lastFitKey) {
-        lastFitKey = key;
-        map.setView([p.lat - 0.005, p.lng], 14, { animate: true });
+    if (state.driverPoint && typeof state.driverPoint.lat === 'number' && typeof state.driverPoint.lng === 'number') {
+      const drvLngLat = [state.driverPoint.lng, state.driverPoint.lat];
+      const el = makeEl('ryde-driver');
+      activeMarkers.push(
+        new maplibregl.Marker({ element: el, anchor: 'center' })
+          .setLngLat(drvLngLat)
+          .addTo(map)
+      );
+      bounds.extend(drvLngLat);
+      hasBounds = true;
+    }
+
+    const fitKey = JSON.stringify([
+      p ? [p.lat.toFixed(4), p.lng.toFixed(4)] : null,
+      d && state.showRoute ? [d.lat.toFixed(4), d.lng.toFixed(4)] : null,
+      route.length,
+      state.showRoute
+    ]);
+
+    if (fitKey !== lastFitKey && hasBounds) {
+      lastFitKey = fitKey;
+      if (state.showRoute && d && p) {
+        map.fitBounds(bounds, {
+          padding: { top: 96, bottom: 260, left: 48, right: 48 },
+          maxZoom: 16,
+          duration: 650
+        });
+      } else if (p) {
+        map.easeTo({
+          center: [p.lng, p.lat],
+          zoom: 14.8,
+          duration: 650
+        });
       }
     }
-  };
+  }
+
+  map.on('load', function() {
+    mapReady = true;
+    ensureRouteLayers(${isDark ? 'true' : 'false'});
+    if (pendingState) {
+      applyState(pendingState);
+      pendingState = null;
+    }
+    postToHost({ type: 'ready' });
+  });
+
+  map.on('click', function(e) {
+    if (!pinMode) return;
+    postToHost({ type: 'pin', lat: e.lngLat.lat, lng: e.lngLat.lng });
+  });
+
+  window.updateRydeMap = applyState;
 
   window.addEventListener('message', function(ev) {
     try {
       const msg = typeof ev.data === 'string' ? JSON.parse(ev.data) : ev.data;
-      if (msg && msg.type === 'sync') {
-        window.updateRydeMap(msg.payload);
+      if (msg && msg.type === 'sync' && msg.payload) {
+        applyState(msg.payload);
       }
-    } catch (_) {}
+    } catch (e) {}
   });
-
-  postToHost({ type: 'ready' });
 </script>
 </body>
 </html>`;
 }
 
-/**
- * Real interactive OpenStreetMap + CartoDB Leaflet map working across iOS, Android, and Web
- * with zero paid API keys. Supports real OSRM road polylines, live driver GPS, and tap-to-pin.
- */
 export const InteractiveMap: React.FC<InteractiveMapProps> = ({
   pickup,
   destination,
   routeCoords,
   showRoute = false,
   showRadar = false,
-  driverCoords,
+  driverCoords = null,
   driverProgress,
   etaPillLabel,
   pinMode = false,
@@ -215,27 +340,37 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
   const webViewRef = useRef<WebView>(null);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const readyRef = useRef(false);
+  const [mapLoaded, setMapLoaded] = useState(false);
 
-  const html = useMemo(() => buildLeafletHtml(isDark), [isDark]);
+  const html = useMemo(() => buildMapLibreHtml(isDark), [isDark]);
 
-  // Compute driver coordinate (prefer live GPS from Supabase, fallback to polyline interpolation)
-  const resolvedDriverPoint: LatLng | null = useMemo(() => {
+  // Reset loaded shimmer briefly when switching Light/Dark vector style
+  useEffect(() => {
+    readyRef.current = false;
+    setMapLoaded(false);
+  }, [isDark]);
+
+  // Compute driver coordinate (prefer live GPS, fallback to route polyline interpolation)
+  const resolvedDriverPoint = useMemo<LatLng | null>(() => {
     if (driverCoords) return driverCoords;
-    if (typeof driverProgress !== 'number' || !pickup || !destination) {
-      return null;
-    }
-    const pts =
-      routeCoords && routeCoords.length >= 2
-        ? routeCoords
-        : [
-            [pickup.lat, pickup.lng] as [number, number],
-            [destination.lat, destination.lng] as [number, number],
-          ];
+    if (typeof driverProgress !== 'number') return null;
     const clamped = Math.max(0, Math.min(1, driverProgress));
-    const idx = Math.min(pts.length - 1, Math.floor(clamped * (pts.length - 1)));
-    const pt = pts[idx] ?? pts[0]!;
-    return { lat: pt[0], lng: pt[1] };
-  }, [driverCoords, driverProgress, pickup, destination, routeCoords]);
+    if (routeCoords && routeCoords.length >= 2) {
+      const idx = Math.min(
+        routeCoords.length - 1,
+        Math.floor(clamped * (routeCoords.length - 1))
+      );
+      const pt = routeCoords[idx];
+      if (pt) return { lat: pt[0], lng: pt[1] };
+    }
+    if (pickup && destination) {
+      return {
+        lat: pickup.lat + (destination.lat - pickup.lat) * clamped,
+        lng: pickup.lng + (destination.lng - pickup.lng) * clamped,
+      };
+    }
+    return null;
+  }, [driverCoords, driverProgress, routeCoords, pickup, destination]);
 
   const mapPayload = useMemo(
     () => ({
@@ -287,6 +422,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
         const data = typeof ev.data === 'string' ? JSON.parse(ev.data) : ev.data;
         if (data?.type === 'ready') {
           readyRef.current = true;
+          setMapLoaded(true);
           pushStateToMap();
         } else if (data?.type === 'pin' && onPinSelect) {
           onPinSelect(Number(data.lat), Number(data.lng));
@@ -308,6 +444,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
       };
       if (data.type === 'ready') {
         readyRef.current = true;
+        setMapLoaded(true);
         pushStateToMap();
       } else if (
         data.type === 'pin' &&
@@ -328,7 +465,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
         React.createElement('iframe', {
           ref: iframeRef,
           srcDoc: html,
-          title: 'Ryde Live Map',
+          title: 'Ryde Vector Map',
           style: {
             width: '100%',
             height: '100%',
@@ -348,6 +485,22 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
           style={styles.webview}
         />
       )}
+
+      {/* Smooth loading overlay while MapLibre vector tiles initialize */}
+      {!mapLoaded ? (
+        <Animated.View
+          pointerEvents="none"
+          exiting={FadeOut.duration(280)}
+          style={[styles.loadingOverlay, { backgroundColor: colors.canvas }]}
+        >
+          <GlassSurface radius={RADII.pill} contentStyle={styles.loadingPill}>
+            <ActivityIndicator size="small" color={colors.brandGoldDeep} />
+            <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
+              Loading map…
+            </Text>
+          </GlassSurface>
+        </Animated.View>
+      ) : null}
 
       {/* Floating Route ETA Pill */}
       {showRoute && etaPillLabel ? (
@@ -371,25 +524,49 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     overflow: 'hidden',
   },
   webview: {
     flex: 1,
     backgroundColor: 'transparent',
   },
+  loadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingBottom: 140,
+  },
+  loadingPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  loadingText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
   etaPillWrap: {
     position: 'absolute',
-    top: 122,
+    top: '22%',
     alignSelf: 'center',
-    zIndex: 10,
   },
   etaPillInner: {
     paddingHorizontal: 14,
-    paddingVertical: 8,
+    paddingVertical: 7,
   },
   etaPillText: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '700',
   },
 });

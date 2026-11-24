@@ -1,4 +1,5 @@
 import * as Location from 'expo-location';
+import { MAP_API_KEY, MAP_PROVIDER } from '@/config/mapConfig';
 import { LatLng, PlaceLocation, RouteGeometry } from '@/types';
 
 /** Default center: Visayas State University / Baybay City, Leyte, Philippines */
@@ -62,7 +63,9 @@ interface NominatimItem {
 }
 
 /**
- * Free OpenStreetMap Nominatim place search biased around current location (Philippines).
+ * Place search biased around current location (Philippines).
+ * Automatically upgrades to MapTiler Geocoding API when `EXPO_PUBLIC_MAP_API_KEY`
+ * is configured, falling back to free OpenStreetMap Nominatim.
  */
 export async function searchPlacesOSM(
   query: string,
@@ -70,6 +73,47 @@ export async function searchPlacesOSM(
 ): Promise<PlaceLocation[]> {
   const trimmed = query.trim();
   if (trimmed.length < 2) return [];
+
+  // Upgrade to commercial MapTiler Geocoding when API key is configured
+  if (MAP_API_KEY && MAP_PROVIDER === 'maptiler') {
+    try {
+      const url =
+        `https://api.maptiler.com/geocoding/${encodeURIComponent(trimmed)}.json` +
+        `?key=${encodeURIComponent(MAP_API_KEY)}&country=ph&proximity=${near.lng},${near.lat}&limit=7`;
+      const res = await fetch(url);
+      if (res.ok) {
+        const json = (await res.json()) as {
+          features?: Array<{
+            id: string;
+            text?: string;
+            place_name?: string;
+            center?: [number, number];
+          }>;
+        };
+        if (json.features?.length) {
+          return json.features
+            .filter((f) => Array.isArray(f.center) && f.center.length === 2)
+            .map((f) => {
+              const lng = f.center![0];
+              const lat = f.center![1];
+              const dist = haversineKm(near, { lat, lng });
+              return {
+                id: `mt-${f.id}`,
+                name: f.text || f.place_name?.split(',')[0] || 'Selected Place',
+                address: f.place_name || '',
+                lat,
+                lng,
+                distanceKm: Math.max(0.2, Number(dist.toFixed(1))),
+                etaMinutes: Math.max(2, Math.round(dist * 2.4)),
+                category: 'landmark',
+              };
+            });
+        }
+      }
+    } catch {
+      // Fall through to Nominatim
+    }
+  }
 
   try {
     const viewbox = `${near.lng - 0.35},${near.lat + 0.35},${near.lng + 0.35},${near.lat - 0.35}`;
@@ -129,6 +173,31 @@ export async function reverseGeocodeOSM(
     etaMinutes: Math.max(2, Math.round(dist * 2.4)),
     category: 'landmark',
   };
+
+  // Upgrade to commercial MapTiler reverse geocoding when configured
+  if (MAP_API_KEY && MAP_PROVIDER === 'maptiler') {
+    try {
+      const url =
+        `https://api.maptiler.com/geocoding/${lng},${lat}.json` +
+        `?key=${encodeURIComponent(MAP_API_KEY)}&limit=1`;
+      const res = await fetch(url);
+      if (res.ok) {
+        const json = (await res.json()) as {
+          features?: Array<{ text?: string; place_name?: string }>;
+        };
+        const top = json.features?.[0];
+        if (top) {
+          return {
+            ...fallback,
+            name: top.text || top.place_name?.split(',')[0] || fallback.name,
+            address: top.place_name || fallback.address,
+          };
+        }
+      }
+    } catch {
+      // Fall through to Nominatim
+    }
+  }
 
   try {
     const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=17&addressdetails=1`;
