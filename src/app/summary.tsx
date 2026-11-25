@@ -11,7 +11,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GlassSurface, PrimaryButton } from '@/components/ui';
-import { formatPeso, RADII, SQUIRCLE, TABULAR_NUMS } from '@/constants/theme';
+import { formatPeso, RADII, SQUIRCLE, TABULAR_NUMS, TYPOGRAPHY } from '@/constants/theme';
 import {
   BAYBAY_PLACES,
   calculateTierFare,
@@ -183,7 +183,7 @@ export default function RideSummaryScreen() {
             <Text
               style={[
                 styles.totalVal,
-                TABULAR_NUMS,
+                TYPOGRAPHY.fareDisplay,
                 { color: colors.textPrimary },
               ]}
             >

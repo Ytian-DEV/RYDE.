@@ -19,9 +19,17 @@ import {
   GlassIconButton,
   GlassSurface,
   InteractiveMap,
+  PressableScale,
   PrimaryButton,
+  SkeletonBox,
 } from '@/components/ui';
-import { formatPeso, RADII, SQUIRCLE, TABULAR_NUMS } from '@/constants/theme';
+import {
+  formatPeso,
+  RADII,
+  SQUIRCLE,
+  TABULAR_NUMS,
+  TYPOGRAPHY,
+} from '@/constants/theme';
 import {
   BAYBAY_PLACES,
   calculateTierFare,
@@ -191,12 +199,10 @@ export default function RideTiersScreen() {
                 routeGeometry?.distanceKm
               );
               return (
-                <Pressable
+                <PressableScale
                   key={tier.id}
-                  onPress={() => {
-                    Haptics.selectionAsync().catch(() => {});
-                    setSelectedTierId(tier.id);
-                  }}
+                  onPress={() => setSelectedTierId(tier.id)}
+                  haptic="selection"
                   accessibilityRole="radio"
                   accessibilityState={{ selected }}
                   style={[
@@ -271,37 +277,72 @@ export default function RideTiersScreen() {
                           </View>
                         ) : null}
                       </View>
-                      <Text
-                        numberOfLines={1}
-                        style={[
-                          styles.tierTagline,
-                          TABULAR_NUMS,
-                          {
-                            color: selected
-                              ? 'rgba(255, 255, 255, 0.84)'
-                              : colors.textSecondary,
-                          },
-                        ]}
-                      >
-                        {tier.tagline} • {tier.etaMinutes} min
-                      </Text>
+                      <View style={styles.tierSubRow}>
+                        <View
+                          style={[
+                            styles.etaBadge,
+                            {
+                              backgroundColor: selected
+                                ? 'rgba(255, 255, 255, 0.22)'
+                                : colors.pill,
+                            },
+                          ]}
+                        >
+                          <Ionicons
+                            name="time-outline"
+                            size={11}
+                            color={
+                              selected ? colors.textOnGold : colors.textSecondary
+                            }
+                          />
+                          <Text
+                            style={[
+                              styles.etaBadgeText,
+                              TABULAR_NUMS,
+                              {
+                                color: selected
+                                  ? colors.textOnGold
+                                  : colors.textSecondary,
+                              },
+                            ]}
+                          >
+                            {tier.etaMinutes} min
+                          </Text>
+                        </View>
+                        <Text
+                          numberOfLines={1}
+                          style={[
+                            styles.tierTagline,
+                            {
+                              color: selected
+                                ? 'rgba(255, 255, 255, 0.84)'
+                                : colors.textSecondary,
+                            },
+                          ]}
+                        >
+                          {tier.tagline}
+                        </Text>
+                      </View>
                     </View>
                   </View>
 
-                  <Text
-                    style={[
-                      styles.tierPrice,
-                      TABULAR_NUMS,
-                      {
-                        color: selected
-                          ? colors.textOnGold
-                          : colors.textPrimary,
-                      },
-                    ]}
-                  >
-                    {formatPeso(fare.totalFare)}
-                  </Text>
-                </Pressable>
+                  {loadingRoute ? (
+                    <SkeletonBox width={64} height={20} radius={7} />
+                  ) : (
+                    <Text
+                      style={[
+                        TYPOGRAPHY.fare,
+                        {
+                          color: selected
+                            ? colors.textOnGold
+                            : colors.textPrimary,
+                        },
+                      ]}
+                    >
+                      {formatPeso(fare.totalFare)}
+                    </Text>
+                  )}
+                </PressableScale>
               );
             })}
           </View>
@@ -481,6 +522,24 @@ const styles = StyleSheet.create({
   },
   tierTagline: {
     fontSize: 12,
+    flexShrink: 1,
+  },
+  tierSubRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+  },
+  etaBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  etaBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
   },
   tierPrice: {
     fontSize: 17,

@@ -12,11 +12,17 @@ import {
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   GlassIconButton,
   GlassSurface,
   InteractiveMap,
+  PressableScale,
   PrimaryButton,
   SkeletonBox,
 } from '@/components/ui';
@@ -58,6 +64,32 @@ export default function SearchLocationScreen() {
   const [recenterTrigger, setRecenterTrigger] = useState(0);
   const pinDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const didAutoGpsRef = useRef(false);
+
+  // Pin lift physics: pin rises while panning, settles with a spring + haptic on release
+  const pinLift = useSharedValue(0);
+  const pinHeadStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateY: -14 * pinLift.value },
+      { scale: 1 + 0.08 * pinLift.value },
+    ],
+  }));
+  const pinGroundStyle = useAnimatedStyle(() => ({
+    opacity: 0.55 - 0.3 * pinLift.value,
+    transform: [{ scaleX: 1 + 0.9 * pinLift.value }],
+  }));
+
+  const handlePinDragChange = useCallback(
+    (dragging: boolean) => {
+      if (dragging) {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+        pinLift.value = withSpring(1, { damping: 16, stiffness: 260 });
+      } else {
+        pinLift.value = withSpring(0, { damping: 11, stiffness: 300 });
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+      }
+    },
+    [pinLift]
+  );
 
   // Detect live GPS once if pickup is still the uninitialized default
   useEffect(() => {
@@ -223,36 +255,39 @@ export default function SearchLocationScreen() {
           pinTarget={activeField}
           recenterTrigger={recenterTrigger}
           onPinCenterChange={handlePinCenterChange}
+          onPinDragChange={handlePinDragChange}
         />
 
-        {/* Fixed Center Pin Crosshair (moves freely over map as user pans) */}
+        {/* Fixed Center Pin (lifts with a soft ground shadow while panning, settles on release) */}
         <View pointerEvents="none" style={styles.centerPinOverlay}>
-          <View
-            style={[
-              styles.centerPinHead,
-              SQUIRCLE,
-              {
-                backgroundColor:
-                  activeField === 'pickup' ? colors.obsidian : colors.brandGold,
-              },
-            ]}
-          >
-            <Ionicons
-              name={activeField === 'pickup' ? 'navigate' : 'location'}
-              size={18}
-              color="#FFFFFF"
+          <Animated.View style={[styles.centerPinColumn, pinHeadStyle]}>
+            <View
+              style={[
+                styles.centerPinHead,
+                SQUIRCLE,
+                {
+                  backgroundColor:
+                    activeField === 'pickup' ? colors.obsidian : colors.brandGold,
+                },
+              ]}
+            >
+              <Ionicons
+                name={activeField === 'pickup' ? 'navigate' : 'location'}
+                size={18}
+                color="#FFFFFF"
+              />
+            </View>
+            <View
+              style={[
+                styles.centerPinStem,
+                {
+                  backgroundColor:
+                    activeField === 'pickup' ? colors.obsidian : colors.brandGold,
+                },
+              ]}
             />
-          </View>
-          <View
-            style={[
-              styles.centerPinStem,
-              {
-                backgroundColor:
-                  activeField === 'pickup' ? colors.obsidian : colors.brandGold,
-              },
-            ]}
-          />
-          <View style={styles.centerPinShadowDot} />
+          </Animated.View>
+          <Animated.View style={[styles.centerPinShadowDot, pinGroundStyle]} />
         </View>
 
         {/* Top Bar */}
@@ -607,9 +642,10 @@ export default function SearchLocationScreen() {
           )
         }
         renderItem={({ item }) => (
-          <Pressable
+          <PressableScale
             onPress={() => handleSelectPlace(item)}
             accessibilityRole="button"
+            haptic="selection"
           >
             <GlassSurface radius={20} contentStyle={styles.placeRow}>
               <View style={styles.placeLeft}>
@@ -657,7 +693,7 @@ export default function SearchLocationScreen() {
                 {item.distanceKm.toFixed(1)} km
               </Text>
             </GlassSurface>
-          </Pressable>
+          </PressableScale>
         )}
       />
 
@@ -849,9 +885,12 @@ const styles = StyleSheet.create({
     marginLeft: -18,
     marginTop: -46,
     width: 36,
-    height: 50,
+    height: 48,
     alignItems: 'center',
     justifyContent: 'flex-start',
+  },
+  centerPinColumn: {
+    alignItems: 'center',
   },
   centerPinHead: {
     width: 36,
@@ -868,11 +907,12 @@ const styles = StyleSheet.create({
     borderRadius: 2,
   },
   centerPinShadowDot: {
-    width: 8,
-    height: 4,
-    borderRadius: 4,
-    backgroundColor: 'rgba(24, 28, 35, 0.35)',
-    marginTop: 1,
+    position: 'absolute',
+    bottom: 0,
+    width: 10,
+    height: 5,
+    borderRadius: 5,
+    backgroundColor: 'rgba(24, 28, 35, 0.55)',
   },
   pinRecenterWrap: {
     position: 'absolute',

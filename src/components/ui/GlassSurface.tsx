@@ -56,12 +56,24 @@ export const GlassSurface: React.FC<GlassSurfaceProps> = ({
         } as unknown as ViewStyle)
       : undefined;
 
+  // Soft ambient elevation: wide, low-opacity, slightly offset (never a dark halo)
+  const elevationStyle: ViewStyle | null = elevated
+    ? {
+        shadowColor: colors.shadowColor,
+        shadowOpacity: isDark ? 0.34 : 0.09,
+        shadowRadius: 18,
+        shadowOffset: { width: 0, height: topOnly ? -3 : 6 },
+        elevation: 3,
+      }
+    : null;
+
   return (
     <View
       style={[
         styles.outer,
         SQUIRCLE,
         radiusStyle,
+        elevationStyle,
         style ?? null,
       ]}
     >
@@ -74,7 +86,7 @@ export const GlassSurface: React.FC<GlassSurfaceProps> = ({
           radiusStyle,
           {
             borderColor: specularBorder,
-            borderBottomWidth: topOnly ? 0 : 1,
+            borderBottomWidth: topOnly ? 0 : StyleSheet.hairlineWidth,
             backgroundColor:
               Platform.OS === 'ios' ? 'transparent' : backgroundColor,
           },
@@ -127,7 +139,7 @@ const styles = StyleSheet.create({
   },
   clipper: {
     overflow: 'hidden',
-    borderWidth: 1,
+    borderWidth: StyleSheet.hairlineWidth,
   },
   fillClipper: {
     flex: 1,
