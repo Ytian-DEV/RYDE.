@@ -204,12 +204,12 @@ export default function RideTiersScreen() {
                     SQUIRCLE,
                     {
                       backgroundColor: selected
-                        ? colors.brandGoldSoft
+                        ? colors.brandGold
                         : colors.elevated,
                       borderColor: selected
-                        ? colors.brandGoldDeep
+                        ? colors.brandGold
                         : colors.borderSubtle,
-                      borderWidth: selected ? 1.8 : 1,
+                      borderWidth: 1,
                     },
                   ]}
                 >
@@ -220,7 +220,7 @@ export default function RideTiersScreen() {
                         SQUIRCLE,
                         {
                           backgroundColor: selected
-                            ? colors.brandGold
+                            ? 'rgba(255, 255, 255, 0.20)'
                             : colors.pill,
                         },
                       ]}
@@ -236,7 +236,11 @@ export default function RideTiersScreen() {
                         <Text
                           style={[
                             styles.tierName,
-                            { color: colors.textPrimary },
+                            {
+                              color: selected
+                                ? colors.textOnGold
+                                : colors.textPrimary,
+                            },
                           ]}
                         >
                           {tier.name}
@@ -245,13 +249,21 @@ export default function RideTiersScreen() {
                           <View
                             style={[
                               styles.tierBadge,
-                              { backgroundColor: colors.pill },
+                              {
+                                backgroundColor: selected
+                                  ? 'rgba(255, 255, 255, 0.22)'
+                                  : colors.pill,
+                              },
                             ]}
                           >
                             <Text
                               style={[
                                 styles.tierBadgeText,
-                                { color: colors.textSecondary },
+                                {
+                                  color: selected
+                                    ? colors.textOnGold
+                                    : colors.textSecondary,
+                                },
                               ]}
                             >
                               {tier.badge}
@@ -264,7 +276,11 @@ export default function RideTiersScreen() {
                         style={[
                           styles.tierTagline,
                           TABULAR_NUMS,
-                          { color: colors.textSecondary },
+                          {
+                            color: selected
+                              ? 'rgba(255, 255, 255, 0.84)'
+                              : colors.textSecondary,
+                          },
                         ]}
                       >
                         {tier.tagline} • {tier.etaMinutes} min
@@ -277,10 +293,9 @@ export default function RideTiersScreen() {
                       styles.tierPrice,
                       TABULAR_NUMS,
                       {
-                        color:
-                          selected && isDark
-                            ? colors.brandGold
-                            : colors.textPrimary,
+                        color: selected
+                          ? colors.textOnGold
+                          : colors.textPrimary,
                       },
                     ]}
                   >

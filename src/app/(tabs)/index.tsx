@@ -215,25 +215,28 @@ export default function HomeMapScreen() {
                     SQUIRCLE,
                     {
                       backgroundColor: active
-                        ? colors.brandGoldSoft
+                        ? colors.brandGold
                         : colors.pill,
                       borderColor: active
-                        ? colors.brandGoldDeep
+                        ? colors.brandGold
                         : colors.borderSubtle,
-                      borderWidth: active ? 1.5 : 1,
+                      borderWidth: 1,
                     },
                   ]}
                 >
                   <Ionicons
                     name={item.icon}
                     size={22}
-                    color={
-                      active && isDark ? colors.brandGold : colors.textPrimary
-                    }
+                    color={active ? colors.textOnGold : colors.textPrimary}
                   />
                   <Text
                     numberOfLines={1}
-                    style={[styles.serviceName, { color: colors.textPrimary }]}
+                    style={[
+                      styles.serviceName,
+                      {
+                        color: active ? colors.textOnGold : colors.textPrimary,
+                      },
+                    ]}
                   >
                     {item.label}
                   </Text>
@@ -242,7 +245,11 @@ export default function HomeMapScreen() {
                     style={[
                       styles.servicePrice,
                       TABULAR_NUMS,
-                      { color: colors.textSecondary },
+                      {
+                        color: active
+                          ? 'rgba(255, 255, 255, 0.85)'
+                          : colors.textSecondary,
+                      },
                     ]}
                   >
                     ₱{item.startingFare}+
