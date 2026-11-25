@@ -92,10 +92,10 @@ export default function OrdersScreen() {
                   SQUIRCLE,
                   {
                     backgroundColor: active
-                      ? colors.obsidian
+                      ? colors.brandGold
                       : colors.elevated,
                     borderColor: active
-                      ? colors.obsidian
+                      ? colors.brandGold
                       : colors.borderSubtle,
                   },
                 ]}
@@ -104,7 +104,7 @@ export default function OrdersScreen() {
                   style={[
                     styles.filterText,
                     {
-                      color: active ? colors.brandGold : colors.textPrimary,
+                      color: active ? colors.textOnGold : colors.textPrimary,
                     },
                   ]}
                 >

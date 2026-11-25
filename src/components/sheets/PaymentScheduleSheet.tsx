@@ -115,12 +115,12 @@ export const PaymentScheduleSheet: React.FC<PaymentScheduleSheetProps> = ({
                       SQUIRCLE,
                       {
                         backgroundColor: selected
-                          ? colors.brandGoldSoft
+                          ? colors.brandGold
                           : colors.pill,
                         borderColor: selected
-                          ? colors.brandGoldDeep
+                          ? colors.brandGold
                           : colors.borderSubtle,
-                        borderWidth: selected ? 1.5 : 1,
+                        borderWidth: 1,
                       },
                     ]}
                   >
@@ -131,7 +131,7 @@ export const PaymentScheduleSheet: React.FC<PaymentScheduleSheetProps> = ({
                           SQUIRCLE,
                           {
                             backgroundColor: selected
-                              ? colors.brandGold
+                              ? 'rgba(255, 255, 255, 0.20)'
                               : colors.elevated,
                           },
                         ]}
@@ -146,7 +146,11 @@ export const PaymentScheduleSheet: React.FC<PaymentScheduleSheetProps> = ({
                         <Text
                           style={[
                             styles.methodLabel,
-                            { color: colors.textPrimary },
+                            {
+                              color: selected
+                                ? colors.textOnGold
+                                : colors.textPrimary,
+                            },
                           ]}
                         >
                           {pm.label}
@@ -154,7 +158,11 @@ export const PaymentScheduleSheet: React.FC<PaymentScheduleSheetProps> = ({
                         <Text
                           style={[
                             styles.methodSub,
-                            { color: colors.textSecondary },
+                            {
+                              color: selected
+                                ? 'rgba(255, 255, 255, 0.84)'
+                                : colors.textSecondary,
+                            },
                           ]}
                         >
                           {pm.subtitle}
@@ -167,10 +175,10 @@ export const PaymentScheduleSheet: React.FC<PaymentScheduleSheetProps> = ({
                         styles.radio,
                         {
                           backgroundColor: selected
-                            ? colors.obsidian
+                            ? '#FFFFFF'
                             : 'transparent',
                           borderColor: selected
-                            ? colors.obsidian
+                            ? '#FFFFFF'
                             : colors.textTertiary,
                         },
                       ]}
@@ -209,10 +217,10 @@ export const PaymentScheduleSheet: React.FC<PaymentScheduleSheetProps> = ({
                       SQUIRCLE,
                       {
                         backgroundColor: active
-                          ? colors.obsidian
+                          ? colors.brandGold
                           : colors.pill,
                         borderColor: active
-                          ? colors.obsidian
+                          ? colors.brandGold
                           : colors.borderSubtle,
                       },
                     ]}
@@ -223,7 +231,7 @@ export const PaymentScheduleSheet: React.FC<PaymentScheduleSheetProps> = ({
                         TABULAR_NUMS,
                         {
                           color: active
-                            ? colors.brandGold
+                            ? colors.textOnGold
                             : colors.textPrimary,
                         },
                       ]}

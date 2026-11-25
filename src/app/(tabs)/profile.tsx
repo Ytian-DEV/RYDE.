@@ -698,10 +698,10 @@ export default function ProfileScreen() {
                       SQUIRCLE,
                       {
                         backgroundColor: active
-                          ? colors.brandGoldSoft
+                          ? colors.brandGold
                           : colors.elevated,
                         borderColor: active
-                          ? colors.brandGoldDeep
+                          ? colors.brandGold
                           : colors.borderSubtle,
                       },
                     ]}
@@ -710,7 +710,11 @@ export default function ProfileScreen() {
                       <Text
                         style={[
                           styles.settingTitle,
-                          { color: colors.textPrimary },
+                          {
+                            color: active
+                              ? colors.textOnGold
+                              : colors.textPrimary,
+                          },
                         ]}
                       >
                         {p.code}
@@ -718,7 +722,11 @@ export default function ProfileScreen() {
                       <Text
                         style={[
                           styles.settingSub,
-                          { color: colors.textSecondary },
+                          {
+                            color: active
+                              ? 'rgba(255, 255, 255, 0.84)'
+                              : colors.textSecondary,
+                          },
                         ]}
                       >
                         {p.title} • {p.expiry}
@@ -726,7 +734,7 @@ export default function ProfileScreen() {
                     </View>
                     <Text
                       style={{
-                        color: active ? colors.success : colors.brandGoldDeep,
+                        color: active ? colors.textOnGold : colors.brandGoldDeep,
                         fontWeight: '700',
                         fontSize: 13,
                       }}
