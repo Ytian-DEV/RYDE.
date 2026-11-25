@@ -32,8 +32,14 @@ export interface InteractiveMapProps {
   driverProgress?: number; // fallback 0..1 interpolation if driverCoords not supplied
   etaPillLabel?: string;
   pinMode?: boolean;
+  pinTarget?: 'pickup' | 'destination';
+  recenterTrigger?: number;
   onPinSelect?: (lat: number, lng: number) => void;
+  onPinCenterChange?: (lat: number, lng: number) => void;
 }
+
+const PICKUP_SVG = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 2L4.5 20.29l.71.71L12 18l6.79 3 .71-.71L12 2z" fill="#FFFFFF"/></svg>`;
+const DEST_SVG = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z" fill="#FFFFFF"/></svg>`;
 
 function buildMapLibreHtml(
   isDark: boolean,
@@ -62,25 +68,20 @@ function buildMapLibreHtml(
     opacity: 0.48;
     background: transparent !important;
   }
-  .ryde-pulse {
-    width: 18px; height: 18px; border-radius: 50%;
-    background: #007AFF; border: 3px solid #FFFFFF;
-    box-shadow: 0 0 0 10px rgba(0, 122, 255, 0.24);
-  }
   .ryde-pin-pickup {
-    width: 18px; height: 18px; border-radius: 50%;
-    background: #16A34A; border: 3px solid #FFFFFF;
-    box-shadow: 0 3px 10px rgba(0,0,0,0.35);
+    width: 30px; height: 30px; border-radius: 11px;
+    background: #181C23; border: 2px solid #FFFFFF;
+    display: flex; align-items: center; justify-content: center;
   }
   .ryde-pin-dest {
-    width: 18px; height: 18px; border-radius: 50%;
-    background: #EF4444; border: 3px solid #FFFFFF;
-    box-shadow: 0 3px 10px rgba(0,0,0,0.35);
+    width: 30px; height: 30px; border-radius: 11px;
+    background: ${accentColor}; border: 2px solid #FFFFFF;
+    display: flex; align-items: center; justify-content: center;
   }
   .ryde-driver {
-    width: 24px; height: 24px; border-radius: 50%;
+    width: 26px; height: 26px; border-radius: 50%;
     background: ${accentColor}; border: 3px solid #181C23;
-    box-shadow: 0 0 0 10px ${accentSoftColor}, 0 4px 12px rgba(0,0,0,0.38);
+    box-shadow: 0 0 0 8px ${accentSoftColor};
   }
   .ryde-radar-wrap {
     position: relative; width: 120px; height: 120px;
@@ -109,11 +110,15 @@ function buildMapLibreHtml(
 <script>
   const PRIMARY_STYLE = ${JSON.stringify(styleUrl)};
   const FALLBACK_STYLE = ${fallbackStyleJson};
+  const PICKUP_ICON_HTML = ${JSON.stringify(PICKUP_SVG)};
+  const DEST_ICON_HTML = ${JSON.stringify(DEST_SVG)};
 
   let usedFallback = false;
   let mapReady = false;
   let lastState = null;
   let pinMode = false;
+  let userHasPanned = false;
+  let lastRecenterTrigger = 0;
   let lastFitKey = '';
   let activeMarkers = [];
 
@@ -159,6 +164,23 @@ function buildMapLibreHtml(
   map.on('error', function(err) {
     if (!usedFallback) {
       switchToFallback();
+    }
+  });
+
+  // Track manual user pan/zoom gestures so we never snap the camera back automatically
+  map.on('dragstart', function() {
+    userHasPanned = true;
+  });
+  map.on('zoomstart', function(e) {
+    if (e && e.originalEvent) {
+      userHasPanned = true;
+    }
+  });
+  map.on('moveend', function(e) {
+    if (!pinMode) return;
+    if (e && e.originalEvent) {
+      const c = map.getCenter();
+      postToHost({ type: 'pinCenter', lat: c.lat, lng: c.lng });
     }
   });
 
@@ -211,7 +233,8 @@ function buildMapLibreHtml(
     return el;
   }
 
-  function applyState(state) {
+  function applyState(state, preserveCamera) {
+    const enteringPinMode = !pinMode && !!state.pinMode;
     lastState = state;
     if (!mapReady) {
       return;
@@ -246,59 +269,99 @@ function buildMapLibreHtml(
       routeSource.setData({ type: 'FeatureCollection', features: [] });
     }
 
-    if (p && typeof p.lat === 'number' && typeof p.lng === 'number') {
-      const pLngLat = [p.lng, p.lat];
-      if (state.showRadar) {
-        const el = makeEl(
-          'ryde-radar-wrap',
-          '<div class="ryde-radar-ring"></div><div class="ryde-radar-ring delay"></div><div class="ryde-radar-core"></div>'
-        );
-        activeMarkers.push(
-          new maplibregl.Marker({ element: el, anchor: 'center' })
-            .setLngLat(pLngLat)
-            .addTo(map)
-        );
-      } else {
-        const el = makeEl(state.showRoute ? 'ryde-pin-pickup' : 'ryde-pulse');
-        activeMarkers.push(
-          new maplibregl.Marker({ element: el, anchor: 'center' })
-            .setLngLat(pLngLat)
-            .addTo(map)
-        );
+    // In pinMode, the user drags the map freely underneath the fixed center crosshair pin
+    if (!pinMode) {
+      if (p && typeof p.lat === 'number' && typeof p.lng === 'number') {
+        const pLngLat = [p.lng, p.lat];
+        if (state.showRadar) {
+          const el = makeEl(
+            'ryde-radar-wrap',
+            '<div class="ryde-radar-ring"></div><div class="ryde-radar-ring delay"></div><div class="ryde-radar-core"></div>'
+          );
+          activeMarkers.push(
+            new maplibregl.Marker({ element: el, anchor: 'center' })
+              .setLngLat(pLngLat)
+              .addTo(map)
+          );
+        } else {
+          const el = makeEl('ryde-pin-pickup', PICKUP_ICON_HTML);
+          activeMarkers.push(
+            new maplibregl.Marker({ element: el, anchor: 'center' })
+              .setLngLat(pLngLat)
+              .addTo(map)
+          );
+        }
+        bounds.extend(pLngLat);
+        hasBounds = true;
       }
-      bounds.extend(pLngLat);
-      hasBounds = true;
+
+      if (d && typeof d.lat === 'number' && typeof d.lng === 'number' && state.showRoute) {
+        const dLngLat = [d.lng, d.lat];
+        const el = makeEl('ryde-pin-dest', DEST_ICON_HTML);
+        activeMarkers.push(
+          new maplibregl.Marker({ element: el, anchor: 'center' })
+            .setLngLat(dLngLat)
+            .addTo(map)
+        );
+        bounds.extend(dLngLat);
+        hasBounds = true;
+      }
+
+      if (state.driverPoint && typeof state.driverPoint.lat === 'number' && typeof state.driverPoint.lng === 'number') {
+        const drvLngLat = [state.driverPoint.lng, state.driverPoint.lat];
+        const el = makeEl('ryde-driver');
+        activeMarkers.push(
+          new maplibregl.Marker({ element: el, anchor: 'center' })
+            .setLngLat(drvLngLat)
+            .addTo(map)
+        );
+        bounds.extend(drvLngLat);
+        hasBounds = true;
+      }
     }
 
-    if (d && typeof d.lat === 'number' && typeof d.lng === 'number' && state.showRoute) {
-      const dLngLat = [d.lng, d.lat];
-      const el = makeEl('ryde-pin-dest');
-      activeMarkers.push(
-        new maplibregl.Marker({ element: el, anchor: 'center' })
-          .setLngLat(dLngLat)
-          .addTo(map)
-      );
-      bounds.extend(dLngLat);
-      hasBounds = true;
+    if (preserveCamera) {
+      return;
     }
 
-    if (state.driverPoint && typeof state.driverPoint.lat === 'number' && typeof state.driverPoint.lng === 'number') {
-      const drvLngLat = [state.driverPoint.lng, state.driverPoint.lat];
-      const el = makeEl('ryde-driver');
-      activeMarkers.push(
-        new maplibregl.Marker({ element: el, anchor: 'center' })
-          .setLngLat(drvLngLat)
-          .addTo(map)
-      );
-      bounds.extend(drvLngLat);
-      hasBounds = true;
+    const explicitRecenter =
+      typeof state.recenterTrigger === 'number' &&
+      state.recenterTrigger !== lastRecenterTrigger;
+
+    if (explicitRecenter) {
+      lastRecenterTrigger = state.recenterTrigger;
+      userHasPanned = false;
+    }
+
+    // Center once when entering pinMode on the active target, then never snap back while panning
+    if (enteringPinMode) {
+      const target = state.pinTarget === 'destination' && d ? d : p;
+      if (target && typeof target.lat === 'number' && typeof target.lng === 'number') {
+        map.jumpTo({ center: [target.lng, target.lat], zoom: 15.4 });
+      }
+      return;
+    }
+
+    if (pinMode) {
+      if (explicitRecenter && p) {
+        map.easeTo({ center: [p.lng, p.lat], zoom: 15.6, duration: 550 });
+        setTimeout(function() {
+          postToHost({ type: 'pinCenter', lat: p.lat, lng: p.lng });
+        }, 580);
+      }
+      return;
+    }
+
+    if (userHasPanned && !explicitRecenter && !state.showRoute) {
+      return;
     }
 
     const fitKey = JSON.stringify([
       p ? [p.lat.toFixed(4), p.lng.toFixed(4)] : null,
       d && state.showRoute ? [d.lat.toFixed(4), d.lng.toFixed(4)] : null,
       route.length,
-      state.showRoute
+      state.showRoute,
+      state.recenterTrigger || 0
     ]);
 
     if (fitKey !== lastFitKey && hasBounds) {
@@ -325,8 +388,7 @@ function buildMapLibreHtml(
     try {
       ensureRouteLayers(${isDark ? 'true' : 'false'});
       if (lastState) {
-        lastFitKey = '';
-        applyState(lastState);
+        applyState(lastState, !firstReady);
       }
     } catch (e) {}
     if (firstReady) {
@@ -334,9 +396,17 @@ function buildMapLibreHtml(
     }
   }
 
-  map.on('style.load', markMapReady);
+  map.on('style.load', function() {
+    if (mapReady && lastState) {
+      try {
+        ensureRouteLayers(!!lastState.isDark);
+        applyState(lastState, true);
+      } catch (e) {}
+    } else {
+      markMapReady();
+    }
+  });
   map.on('load', markMapReady);
-  map.on('idle', markMapReady);
   setTimeout(function() {
     if (!map.isStyleLoaded() && !usedFallback) {
       switchToFallback();
@@ -346,7 +416,9 @@ function buildMapLibreHtml(
 
   map.on('click', function(e) {
     if (!pinMode) return;
-    postToHost({ type: 'pin', lat: e.lngLat.lat, lng: e.lngLat.lng });
+    userHasPanned = true;
+    map.easeTo({ center: [e.lngLat.lng, e.lngLat.lat], duration: 320 });
+    postToHost({ type: 'pinCenter', lat: e.lngLat.lat, lng: e.lngLat.lng });
   });
 
   window.updateRydeMap = applyState;
@@ -355,7 +427,7 @@ function buildMapLibreHtml(
     try {
       const msg = typeof ev.data === 'string' ? JSON.parse(ev.data) : ev.data;
       if (msg && msg.type === 'sync' && msg.payload) {
-        applyState(msg.payload);
+        applyState(msg.payload, false);
       }
     } catch (e) {}
   });
@@ -374,7 +446,10 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
   driverProgress,
   etaPillLabel,
   pinMode = false,
+  pinTarget = 'pickup',
+  recenterTrigger = 0,
   onPinSelect,
+  onPinCenterChange,
 }) => {
   const { colors, isDark } = useAppTheme();
   const webViewRef = useRef<WebView>(null);
@@ -460,6 +535,8 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
       showRadar,
       driverPoint: resolvedDriverPoint,
       pinMode,
+      pinTarget,
+      recenterTrigger,
     }),
     [
       isDark,
@@ -470,6 +547,8 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
       showRadar,
       resolvedDriverPoint,
       pinMode,
+      pinTarget,
+      recenterTrigger,
     ]
   );
 
@@ -481,7 +560,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
       );
     } else if (readyRef.current) {
       webViewRef.current?.injectJavaScript(
-        `window.updateRydeMap && window.updateRydeMap(${JSON.stringify(mapPayload)}); true;`
+        `window.updateRydeMap && window.updateRydeMap(${JSON.stringify(mapPayload)}, false); true;`
       );
     }
   };
@@ -502,6 +581,14 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
           pushStateToMap();
         } else if (data?.type === 'pin' && onPinSelect) {
           onPinSelect(Number(data.lat), Number(data.lng));
+        } else if (data?.type === 'pinCenter') {
+          const lat = Number(data.lat);
+          const lng = Number(data.lng);
+          if (onPinCenterChange) {
+            onPinCenterChange(lat, lng);
+          } else if (onPinSelect) {
+            onPinSelect(lat, lng);
+          }
         }
       } catch {
         // Ignore unrelated browser messages
@@ -509,7 +596,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     };
     window.addEventListener('message', handler);
     return () => window.removeEventListener('message', handler);
-  }, [onPinSelect, mapPayload]);
+  }, [onPinSelect, onPinCenterChange, mapPayload]);
 
   const handleNativeMessage = (event: WebViewMessageEvent) => {
     try {
@@ -529,6 +616,16 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
         onPinSelect
       ) {
         onPinSelect(data.lat, data.lng);
+      } else if (
+        data.type === 'pinCenter' &&
+        typeof data.lat === 'number' &&
+        typeof data.lng === 'number'
+      ) {
+        if (onPinCenterChange) {
+          onPinCenterChange(data.lat, data.lng);
+        } else if (onPinSelect) {
+          onPinSelect(data.lat, data.lng);
+        }
       }
     } catch {
       // Ignore malformed bridge messages

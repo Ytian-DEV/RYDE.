@@ -276,3 +276,200 @@ export async function fetchRoadRouteOSRM(
     return fallback;
   }
 }
+
+interface OverpassElement {
+  id: number;
+  lat?: number;
+  lon?: number;
+  center?: { lat: number; lon: number };
+  tags?: Record<string, string | undefined>;
+}
+
+function inferPlaceCategory(tags: Record<string, string | undefined>): PlaceLocation['category'] {
+  const amenity = (tags.amenity || '').toLowerCase();
+  const building = (tags.building || '').toLowerCase();
+  if (
+    amenity.includes('school') ||
+    amenity.includes('university') ||
+    amenity.includes('college') ||
+    building.includes('university') ||
+    building.includes('school')
+  ) {
+    return 'campus';
+  }
+  if (
+    tags.shop ||
+    amenity.includes('cafe') ||
+    amenity.includes('restaurant') ||
+    amenity.includes('fast_food') ||
+    amenity.includes('marketplace') ||
+    amenity.includes('pharmacy') ||
+    amenity.includes('fuel')
+  ) {
+    return 'store';
+  }
+  return 'landmark';
+}
+
+function formatOverpassSubtitle(tags: Record<string, string | undefined>): string {
+  const parts: string[] = [];
+  const street = tags['addr:street'] || tags['addr:place'] || tags['addr:suburb'];
+  const city = tags['addr:city'] || tags['addr:municipality'] || tags['addr:town'];
+  const kind =
+    tags.amenity ||
+    tags.shop ||
+    tags.tourism ||
+    tags.building ||
+    tags.highway;
+  if (kind && kind !== 'yes') {
+    parts.push(kind.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()));
+  }
+  if (street) parts.push(street);
+  if (city) parts.push(city);
+  return parts.join(' • ') || 'Nearby landmark';
+}
+
+/**
+ * Dynamically queries real nearby places, POIs, campuses, shops, and landmarks
+ * around the user's current coordinates (`center`) sorted by distance.
+ */
+export async function fetchNearbyPlaces(
+  center: LatLng = DEFAULT_CENTER
+): Promise<PlaceLocation[]> {
+  const results: PlaceLocation[] = [];
+  const seen = new Set<string>();
+
+  const pushUnique = (place: PlaceLocation) => {
+    const key = place.name.trim().toLowerCase();
+    if (!key || key === 'pinned location' || seen.has(key)) return;
+    seen.add(key);
+    results.push(place);
+  };
+
+  // 1. Live OpenStreetMap Overpass API query for named POIs within 3.5 km of user
+  try {
+    const query = `[out:json][timeout:8];(node(around:3500,${center.lat},${center.lng})["name"]["amenity"];node(around:3500,${center.lat},${center.lng})["name"]["shop"];node(around:3500,${center.lat},${center.lng})["name"]["tourism"];way(around:3500,${center.lat},${center.lng})["name"]["amenity"];way(around:3500,${center.lat},${center.lng})["name"]["shop"];way(around:3500,${center.lat},${center.lng})["name"]["building"];);out center 25;`;
+    const res = await fetch('https://overpass-api.de/api/interpreter', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+      },
+      body: `data=${encodeURIComponent(query)}`,
+    });
+
+    if (res.ok) {
+      const json = (await res.json()) as { elements?: OverpassElement[] };
+      for (const el of json.elements ?? []) {
+        const lat = el.lat ?? el.center?.lat;
+        const lng = el.lon ?? el.center?.lon;
+        const name = el.tags?.name?.trim();
+        if (typeof lat !== 'number' || typeof lng !== 'number' || !name) {
+          continue;
+        }
+        const dist = haversineKm(center, { lat, lng });
+        if (dist < 0.03) continue;
+        pushUnique({
+          id: `poi-${el.id}`,
+          name,
+          address: formatOverpassSubtitle(el.tags ?? {}),
+          lat,
+          lng,
+          distanceKm: Math.max(0.1, Number(dist.toFixed(1))),
+          etaMinutes: Math.max(2, Math.round(dist * 2.4)),
+          category: inferPlaceCategory(el.tags ?? {}),
+        });
+      }
+    }
+  } catch {
+    // Continue to Nominatim / MapTiler supplementary queries
+  }
+
+  // 2. Supplement with MapTiler proximity search if configured and results are sparse
+  if (results.length < 6 && MAP_API_KEY && MAP_PROVIDER === 'maptiler') {
+    try {
+      const url =
+        `https://api.maptiler.com/geocoding/${center.lng},${center.lat}.json` +
+        `?key=${encodeURIComponent(MAP_API_KEY)}&limit=8`;
+      const res = await fetch(url);
+      if (res.ok) {
+        const json = (await res.json()) as {
+          features?: Array<{
+            id: string;
+            text?: string;
+            place_name?: string;
+            center?: [number, number];
+          }>;
+        };
+        for (const f of json.features ?? []) {
+          if (!Array.isArray(f.center) || f.center.length < 2) continue;
+          const lng = f.center[0];
+          const lat = f.center[1];
+          const dist = haversineKm(center, { lat, lng });
+          pushUnique({
+            id: `mt-near-${f.id}`,
+            name: f.text || f.place_name?.split(',')[0] || 'Nearby Place',
+            address: f.place_name || 'Nearby location',
+            lat,
+            lng,
+            distanceKm: Math.max(0.1, Number(dist.toFixed(1))),
+            etaMinutes: Math.max(2, Math.round(dist * 2.4)),
+            category: 'landmark',
+          });
+        }
+      }
+    } catch {
+      // Fall through
+    }
+  }
+
+  // 3. Supplement with proximity-bounded Nominatim query around the user's coordinates
+  if (results.length < 6) {
+    const viewbox = `${center.lng - 0.035},${center.lat + 0.035},${center.lng + 0.035},${center.lat - 0.035}`;
+    const categories = ['school', 'market', 'hospital', 'cafe', 'store'];
+    for (const term of categories) {
+      if (results.length >= 8) break;
+      try {
+        const url =
+          `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=5&bounded=1` +
+          `&viewbox=${encodeURIComponent(viewbox)}&q=${encodeURIComponent(term)}`;
+        const res = await fetch(url, {
+          headers: {
+            Accept: 'application/json',
+            'User-Agent': 'RydeMobileApp/1.0',
+          },
+        });
+        if (!res.ok) continue;
+        const items = (await res.json()) as NominatimItem[];
+        for (const item of items) {
+          const lat = parseFloat(item.lat);
+          const lng = parseFloat(item.lon);
+          const dist = haversineKm(center, { lat, lng });
+          const parts = item.display_name.split(',').map((s) => s.trim());
+          const shortName = item.name || parts[0] || '';
+          const shortAddr = parts.slice(1, 4).join(', ') || item.display_name;
+          pushUnique({
+            id: `osm-near-${item.place_id}`,
+            name: shortName,
+            address: shortAddr,
+            lat,
+            lng,
+            distanceKm: Math.max(0.1, Number(dist.toFixed(1))),
+            etaMinutes: Math.max(2, Math.round(dist * 2.4)),
+            category:
+              term === 'school'
+                ? 'campus'
+                : term === 'cafe' || term === 'store' || term === 'market'
+                  ? 'store'
+                  : 'landmark',
+          });
+        }
+      } catch {
+        // Ignore single category failure
+      }
+    }
+  }
+
+  return results
+    .sort((a, b) => a.distanceKm - b.distanceKm)
+    .slice(0, 12);
+}

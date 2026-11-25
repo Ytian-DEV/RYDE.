@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -18,11 +18,15 @@ import {
   GlassSurface,
   InteractiveMap,
   PrimaryButton,
+  SkeletonBox,
 } from '@/components/ui';
-import { RADII, SQUIRCLE, TABULAR_NUMS } from '@/constants/theme';
-import { BAYBAY_PLACES } from '@/data/mockData';
+import { NO_WEB_OUTLINE, RADII, SQUIRCLE, TABULAR_NUMS } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/useAppTheme';
-import { reverseGeocodeOSM, searchPlacesOSM } from '@/services/geoService';
+import {
+  fetchNearbyPlaces,
+  reverseGeocodeOSM,
+  searchPlacesOSM,
+} from '@/services/geoService';
 import { useRydeStore } from '@/store/useRydeStore';
 import { PlaceLocation } from '@/types';
 
@@ -42,12 +46,47 @@ export default function SearchLocationScreen() {
     'destination'
   );
   const [query, setQuery] = useState('');
+  const [nearbyPlaces, setNearbyPlaces] = useState<PlaceLocation[]>([]);
+  const [loadingNearby, setLoadingNearby] = useState(true);
   const [osmResults, setOsmResults] = useState<PlaceLocation[]>([]);
   const [searchingOsm, setSearchingOsm] = useState(false);
+
+  // Manual map pin-picker state (decoupled from continuous GPS snapping)
   const [pinMode, setPinMode] = useState(false);
   const [resolvingPin, setResolvingPin] = useState(false);
+  const [pinnedPlace, setPinnedPlace] = useState<PlaceLocation | null>(null);
+  const [recenterTrigger, setRecenterTrigger] = useState(0);
+  const pinDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const didAutoGpsRef = useRef(false);
 
-  // Debounced live OpenStreetMap Nominatim place search
+  // Detect live GPS once if pickup is still the uninitialized default
+  useEffect(() => {
+    if (pickup.id === 'gps-current' && !didAutoGpsRef.current) {
+      didAutoGpsRef.current = true;
+      locateUserGps().catch(() => {});
+    }
+  }, [pickup.id, locateUserGps]);
+
+  // Dynamically load nearby places & landmarks around the user's current location
+  useEffect(() => {
+    let cancelled = false;
+    setLoadingNearby(true);
+    fetchNearbyPlaces({ lat: pickup.lat, lng: pickup.lng })
+      .then((places) => {
+        if (!cancelled) {
+          setNearbyPlaces(places);
+          setLoadingNearby(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setLoadingNearby(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [pickup.lat, pickup.lng]);
+
+  // Debounced live place search when typing a query
   useEffect(() => {
     const trimmed = query.trim();
     if (trimmed.length < 2) {
@@ -67,7 +106,7 @@ export default function SearchLocationScreen() {
         setOsmResults(results);
         setSearchingOsm(false);
       }
-    }, 360);
+    }, 340);
 
     return () => {
       cancelled = true;
@@ -75,18 +114,18 @@ export default function SearchLocationScreen() {
     };
   }, [query, pickup.lat, pickup.lng]);
 
-  const combinedPlaces = useMemo(() => {
+  const displayedPlaces = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const localMatches = q
-      ? BAYBAY_PLACES.filter(
-          (p) =>
-            p.name.toLowerCase().includes(q) ||
-            p.address.toLowerCase().includes(q)
-        )
-      : BAYBAY_PLACES;
-
-    const seen = new Set(localMatches.map((p) => p.name.toLowerCase()));
-    const merged = [...localMatches];
+    if (q.length < 2) {
+      return nearbyPlaces;
+    }
+    const localFiltered = nearbyPlaces.filter(
+      (p) =>
+        p.name.toLowerCase().includes(q) ||
+        p.address.toLowerCase().includes(q)
+    );
+    const seen = new Set(localFiltered.map((p) => p.name.toLowerCase()));
+    const merged = [...localFiltered];
     for (const item of osmResults) {
       if (!seen.has(item.name.toLowerCase())) {
         merged.push(item);
@@ -94,7 +133,7 @@ export default function SearchLocationScreen() {
       }
     }
     return merged;
-  }, [query, osmResults]);
+  }, [query, nearbyPlaces, osmResults]);
 
   const handleSelectPlace = (place: PlaceLocation) => {
     Haptics.selectionAsync().catch(() => {});
@@ -108,20 +147,62 @@ export default function SearchLocationScreen() {
     }
   };
 
-  const handleMapPin = async (lat: number, lng: number) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-    setResolvingPin(true);
-    const resolved = await reverseGeocodeOSM(lat, lng, {
-      lat: pickup.lat,
-      lng: pickup.lng,
-    });
-    setResolvingPin(false);
-    if (activeField === 'pickup') {
-      setPickup(resolved);
-    } else {
-      setDestination(resolved);
+  const openPinPicker = () => {
+    Haptics.selectionAsync().catch(() => {});
+    const initialTarget =
+      activeField === 'destination' && destination ? destination : pickup;
+    setPinnedPlace(initialTarget);
+    setPinMode(true);
+  };
+
+  // Called when the user pans/drags or taps the map in pinMode (never snaps back to GPS)
+  const handlePinCenterChange = useCallback(
+    (lat: number, lng: number) => {
+      if (pinDebounceRef.current) {
+        clearTimeout(pinDebounceRef.current);
+      }
+      setResolvingPin(true);
+      pinDebounceRef.current = setTimeout(async () => {
+        const resolved = await reverseGeocodeOSM(lat, lng, {
+          lat: pickup.lat,
+          lng: pickup.lng,
+        });
+        setPinnedPlace(resolved);
+        setResolvingPin(false);
+      }, 280);
+    },
+    [pickup.lat, pickup.lng]
+  );
+
+  const handleConfirmPinnedLocation = () => {
+    if (!pinnedPlace) {
+      setPinMode(false);
+      return;
     }
-    setPinMode(false);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(
+      () => {}
+    );
+    if (activeField === 'pickup') {
+      setPickup(pinnedPlace);
+      setPinMode(false);
+      setActiveField('destination');
+      setQuery('');
+    } else {
+      setDestination(pinnedPlace);
+      setPinMode(false);
+      router.replace('/ride-tiers');
+    }
+  };
+
+  const handlePinRecenterGps = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    setResolvingPin(true);
+    const loc = await locateUserGps();
+    setResolvingPin(false);
+    if (loc) {
+      setPinnedPlace(loc);
+    }
+    setRecenterTrigger((c) => c + 1);
   };
 
   const handleUseCurrentGps = async () => {
@@ -139,8 +220,42 @@ export default function SearchLocationScreen() {
           pickup={pickup}
           destination={destination}
           pinMode
-          onPinSelect={handleMapPin}
+          pinTarget={activeField}
+          recenterTrigger={recenterTrigger}
+          onPinCenterChange={handlePinCenterChange}
         />
+
+        {/* Fixed Center Pin Crosshair (moves freely over map as user pans) */}
+        <View pointerEvents="none" style={styles.centerPinOverlay}>
+          <View
+            style={[
+              styles.centerPinHead,
+              SQUIRCLE,
+              {
+                backgroundColor:
+                  activeField === 'pickup' ? colors.obsidian : colors.brandGold,
+              },
+            ]}
+          >
+            <Ionicons
+              name={activeField === 'pickup' ? 'navigate' : 'location'}
+              size={18}
+              color="#FFFFFF"
+            />
+          </View>
+          <View
+            style={[
+              styles.centerPinStem,
+              {
+                backgroundColor:
+                  activeField === 'pickup' ? colors.obsidian : colors.brandGold,
+              },
+            ]}
+          />
+          <View style={styles.centerPinShadowDot} />
+        </View>
+
+        {/* Top Bar */}
         <View
           style={[
             styles.pinTopBar,
@@ -153,14 +268,91 @@ export default function SearchLocationScreen() {
             onPress={() => setPinMode(false)}
           />
           <GlassSurface radius={RADII.pill} contentStyle={styles.pinBanner}>
-            {resolvingPin ? (
-              <ActivityIndicator size="small" color={colors.brandGoldDeep} />
-            ) : null}
+            <Ionicons
+              name={activeField === 'pickup' ? 'navigate' : 'location'}
+              size={15}
+              color={colors.brandGoldDeep}
+            />
             <Text style={[styles.pinBannerText, { color: colors.textPrimary }]}>
-              {resolvingPin
-                ? 'Finding street name…'
-                : `Tap anywhere on map for ${activeField === 'pickup' ? 'pick-up' : 'destination'}`}
+              {`Drag map or tap to pin ${activeField === 'pickup' ? 'pick-up' : 'destination'}`}
             </Text>
+          </GlassSurface>
+        </View>
+
+        {/* Explicit GPS Recenter Button (only recenters when user taps it) */}
+        <View style={styles.pinRecenterWrap}>
+          <GlassIconButton
+            icon="locate"
+            accessibilityLabel="Recenter map on my GPS location"
+            onPress={handlePinRecenterGps}
+          />
+        </View>
+
+        {/* Bottom Pin Confirmation Card */}
+        <View
+          style={[
+            styles.pinBottomWrap,
+            { bottom: Math.max(insets.bottom, 16) + 12 },
+          ]}
+        >
+          <GlassSurface
+            heavy
+            radius={RADII.xl}
+            contentStyle={styles.pinBottomCard}
+          >
+            <View style={styles.pinPreviewRow}>
+              <View
+                style={[
+                  styles.fieldIconBadge,
+                  SQUIRCLE,
+                  {
+                    backgroundColor:
+                      activeField === 'pickup'
+                        ? colors.obsidian
+                        : colors.brandGold,
+                  },
+                ]}
+              >
+                <Ionicons
+                  name={activeField === 'pickup' ? 'navigate' : 'location'}
+                  size={16}
+                  color="#FFFFFF"
+                />
+              </View>
+              <View style={styles.pinPreviewTextCol}>
+                <Text
+                  style={[styles.fieldTag, { color: colors.textTertiary }]}
+                >
+                  {activeField === 'pickup'
+                    ? 'PINNED PICK-UP'
+                    : 'PINNED DESTINATION'}
+                </Text>
+                <Text
+                  numberOfLines={1}
+                  style={[styles.placeName, { color: colors.textPrimary }]}
+                >
+                  {resolvingPin
+                    ? 'Detecting street address…'
+                    : pinnedPlace?.name ?? 'Pinned Location'}
+                </Text>
+                <Text
+                  numberOfLines={1}
+                  style={[styles.placeAddr, { color: colors.textSecondary }]}
+                >
+                  {pinnedPlace?.address ?? 'Drag map to adjust pin'}
+                </Text>
+              </View>
+            </View>
+            <PrimaryButton
+              label={
+                activeField === 'pickup'
+                  ? 'Confirm Pick-Up Location'
+                  : 'Confirm Destination'
+              }
+              loading={resolvingPin}
+              loadingLabel="Locating pin…"
+              onPress={handleConfirmPinnedLocation}
+            />
           </GlassSurface>
         </View>
       </View>
@@ -190,7 +382,7 @@ export default function SearchLocationScreen() {
         </Text>
       </View>
 
-      {/* Dual Route Input Glass Card */}
+      {/* Dual Route Input Glass Card (Clean neutral borders, semantic icons, no orange focus outline) */}
       <GlassSurface radius={RADII.xl} contentStyle={styles.routeCard}>
         <Pressable
           onPress={() => {
@@ -200,12 +392,23 @@ export default function SearchLocationScreen() {
           style={[
             styles.routeField,
             SQUIRCLE,
-            activeField === 'pickup' && {
-              backgroundColor: colors.brandGoldSoft,
+            {
+              backgroundColor:
+                activeField === 'pickup' ? colors.pill : 'transparent',
+              borderColor:
+                activeField === 'pickup' ? colors.borderSubtle : 'transparent',
             },
           ]}
         >
-          <View style={[styles.pinDot, { backgroundColor: colors.success }]} />
+          <View
+            style={[
+              styles.fieldIconBadge,
+              SQUIRCLE,
+              { backgroundColor: colors.obsidian },
+            ]}
+          >
+            <Ionicons name="navigate" size={14} color="#FFFFFF" />
+          </View>
           <View style={styles.routeInputWrap}>
             <Text style={[styles.fieldTag, { color: colors.textTertiary }]}>
               PICK-UP
@@ -217,7 +420,11 @@ export default function SearchLocationScreen() {
                 placeholder={pickup.name}
                 placeholderTextColor={colors.textSecondary}
                 autoFocus
-                style={[styles.fieldInput, { color: colors.textPrimary }]}
+                style={[
+                  styles.fieldInput,
+                  NO_WEB_OUTLINE,
+                  { color: colors.textPrimary },
+                ]}
               />
             ) : (
               <Text
@@ -242,12 +449,25 @@ export default function SearchLocationScreen() {
           style={[
             styles.routeField,
             SQUIRCLE,
-            activeField === 'destination' && {
-              backgroundColor: colors.brandGoldSoft,
+            {
+              backgroundColor:
+                activeField === 'destination' ? colors.pill : 'transparent',
+              borderColor:
+                activeField === 'destination'
+                  ? colors.borderSubtle
+                  : 'transparent',
             },
           ]}
         >
-          <View style={[styles.pinDot, { backgroundColor: colors.danger }]} />
+          <View
+            style={[
+              styles.fieldIconBadge,
+              SQUIRCLE,
+              { backgroundColor: colors.brandGold },
+            ]}
+          >
+            <Ionicons name="location" size={15} color={colors.textOnGold} />
+          </View>
           <View style={styles.routeInputWrap}>
             <Text style={[styles.fieldTag, { color: colors.textTertiary }]}>
               DESTINATION
@@ -257,11 +477,15 @@ export default function SearchLocationScreen() {
                 value={query}
                 onChangeText={setQuery}
                 placeholder={
-                  destination?.name ?? 'Search any place in Philippines…'
+                  destination?.name ?? 'Where are you heading?'
                 }
                 placeholderTextColor={colors.textSecondary}
                 autoFocus
-                style={[styles.fieldInput, { color: colors.textPrimary }]}
+                style={[
+                  styles.fieldInput,
+                  NO_WEB_OUTLINE,
+                  { color: colors.textPrimary },
+                ]}
               />
             ) : (
               <Text
@@ -291,20 +515,14 @@ export default function SearchLocationScreen() {
       >
         <Pressable onPress={handleUseCurrentGps} accessibilityRole="button">
           <GlassSurface radius={RADII.pill} contentStyle={styles.actionPill}>
-            <Ionicons name="locate" size={16} color={colors.info} />
+            <Ionicons name="locate" size={16} color={colors.brandGoldDeep} />
             <Text style={[styles.actionText, { color: colors.textPrimary }]}>
-              {loadingGps ? 'Locating…' : 'Use GPS'}
+              {loadingGps ? 'Locating…' : 'Current Location'}
             </Text>
           </GlassSurface>
         </Pressable>
 
-        <Pressable
-          onPress={() => {
-            Haptics.selectionAsync().catch(() => {});
-            setPinMode(true);
-          }}
-          accessibilityRole="button"
-        >
+        <Pressable onPress={openPinPicker} accessibilityRole="button">
           <GlassSurface radius={RADII.pill} contentStyle={styles.actionPill}>
             <Ionicons name="map-outline" size={16} color={colors.textPrimary} />
             <Text style={[styles.actionText, { color: colors.textPrimary }]}>
@@ -333,24 +551,61 @@ export default function SearchLocationScreen() {
         </Pressable>
       </ScrollView>
 
-      {/* Results Header */}
+      {/* Dynamic Nearby / Search Results Header */}
       <View style={styles.listHeaderRow}>
         <Text style={[styles.listSectionLabel, { color: colors.textTertiary }]}>
           {query.trim().length >= 2
-            ? 'LIVE OPENSTREETMAP RESULTS'
-            : 'POPULAR BAYBAY & VSU PLACES'}
+            ? 'SEARCH RESULTS'
+            : 'NEARBY PLACES & LANDMARKS'}
         </Text>
-        {searchingOsm ? (
+        {searchingOsm || loadingNearby ? (
           <ActivityIndicator size="small" color={colors.brandGoldDeep} />
         ) : null}
       </View>
 
       <FlatList
-        data={combinedPlaces}
+        data={displayedPlaces}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        ListEmptyComponent={
+          loadingNearby || searchingOsm ? (
+            <View style={{ gap: 10 }}>
+              {[0, 1, 2, 3].map((idx) => (
+                <GlassSurface
+                  key={idx}
+                  radius={20}
+                  contentStyle={styles.placeRow}
+                >
+                  <View style={styles.placeLeft}>
+                    <SkeletonBox width={38} height={38} radius={13} />
+                    <View style={[styles.placeTextCol, { gap: 6 }]}>
+                      <SkeletonBox width={165} height={15} radius={6} />
+                      <SkeletonBox width={210} height={12} radius={6} />
+                    </View>
+                  </View>
+                  <SkeletonBox width={46} height={14} radius={6} />
+                </GlassSurface>
+              ))}
+            </View>
+          ) : (
+            <GlassSurface radius={20} contentStyle={styles.emptyCard}>
+              <Ionicons
+                name="compass-outline"
+                size={28}
+                color={colors.textTertiary}
+              />
+              <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>
+                No places found
+              </Text>
+              <Text style={[styles.emptySub, { color: colors.textSecondary }]}>
+                Type a street, barangay, or landmark above, or tap “Choose on
+                map” to drop a pin anywhere.
+              </Text>
+            </GlassSurface>
+          )
+        }
         renderItem={({ item }) => (
           <Pressable
             onPress={() => handleSelectPlace(item)}
@@ -366,7 +621,13 @@ export default function SearchLocationScreen() {
                   ]}
                 >
                   <Ionicons
-                    name="location"
+                    name={
+                      item.category === 'campus'
+                        ? 'school'
+                        : item.category === 'store'
+                          ? 'storefront'
+                          : 'location'
+                    }
                     size={18}
                     color={colors.brandGoldDeep}
                   />
@@ -441,11 +702,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 10,
     borderRadius: 16,
+    borderWidth: 1,
   },
-  pinDot: {
-    width: 11,
-    height: 11,
-    borderRadius: 6,
+  fieldIconBadge: {
+    width: 30,
+    height: 30,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   routeInputWrap: {
     flex: 1,
@@ -541,6 +805,21 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
   },
+  emptyCard: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+    gap: 8,
+  },
+  emptyTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  emptySub: {
+    fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 18,
+  },
   footer: {
     paddingTop: 10,
   },
@@ -562,5 +841,60 @@ const styles = StyleSheet.create({
   pinBannerText: {
     fontSize: 13,
     fontWeight: '600',
+  },
+  centerPinOverlay: {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    marginLeft: -18,
+    marginTop: -46,
+    width: 36,
+    height: 50,
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+  },
+  centerPinHead: {
+    width: 36,
+    height: 36,
+    borderRadius: 13,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  centerPinStem: {
+    width: 3,
+    height: 10,
+    borderRadius: 2,
+  },
+  centerPinShadowDot: {
+    width: 8,
+    height: 4,
+    borderRadius: 4,
+    backgroundColor: 'rgba(24, 28, 35, 0.35)',
+    marginTop: 1,
+  },
+  pinRecenterWrap: {
+    position: 'absolute',
+    right: 20,
+    bottom: 210,
+  },
+  pinBottomWrap: {
+    position: 'absolute',
+    left: 20,
+    right: 20,
+  },
+  pinBottomCard: {
+    padding: 16,
+    gap: 14,
+  },
+  pinPreviewRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  pinPreviewTextCol: {
+    flex: 1,
+    gap: 2,
   },
 });

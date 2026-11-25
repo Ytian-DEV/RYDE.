@@ -402,8 +402,10 @@ export default function LiveTrackingScreen() {
             ]}
           >
             <View style={styles.routeLineRow}>
-              <View
-                style={[styles.dotSmall, { backgroundColor: colors.success }]}
+              <Ionicons
+                name="navigate"
+                size={14}
+                color={colors.textSecondary}
               />
               <Text
                 numberOfLines={1}
@@ -413,8 +415,10 @@ export default function LiveTrackingScreen() {
               </Text>
             </View>
             <View style={styles.routeLineRow}>
-              <View
-                style={[styles.dotSmall, { backgroundColor: colors.danger }]}
+              <Ionicons
+                name="location"
+                size={15}
+                color={colors.brandGoldDeep}
               />
               <Text
                 numberOfLines={1}
