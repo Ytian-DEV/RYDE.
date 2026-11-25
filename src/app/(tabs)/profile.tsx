@@ -245,21 +245,32 @@ export default function ProfileScreen() {
           </GlassSurface>
         </Pressable>
 
-        {/* Ryde Wallet Obsidian Card */}
+        {/* Ryde Wallet Card (Primary brand color in Light Mode, Obsidian black in Night Mode) */}
         <View
           style={[
             styles.walletCard,
             SQUIRCLE,
-            { backgroundColor: colors.obsidian },
+            { backgroundColor: isDark ? colors.obsidian : colors.brandGold },
           ]}
         >
           <View style={styles.walletLeft}>
-            <Text style={styles.walletLabel}>RYDE WALLET BALANCE</Text>
+            <Text
+              style={[
+                styles.walletLabel,
+                {
+                  color: isDark
+                    ? 'rgba(255, 255, 255, 0.56)'
+                    : 'rgba(255, 255, 255, 0.88)',
+                },
+              ]}
+            >
+              RYDE WALLET BALANCE
+            </Text>
             <Text
               style={[
                 styles.walletAmount,
                 TABULAR_NUMS,
-                { color: colors.brandGold },
+                { color: isDark ? colors.brandGold : colors.textOnGold },
               ]}
             >
               {formatPeso(user.walletBalance)}
@@ -276,10 +287,19 @@ export default function ProfileScreen() {
             style={[
               styles.topUpBtn,
               SQUIRCLE,
-              { backgroundColor: colors.brandGold },
+              {
+                backgroundColor: isDark ? colors.brandGold : '#FFFFFF',
+              },
             ]}
           >
-            <Text style={[styles.topUpText, { color: colors.textOnGold }]}>
+            <Text
+              style={[
+                styles.topUpText,
+                {
+                  color: isDark ? colors.textOnGold : colors.brandGold,
+                },
+              ]}
+            >
               + Top Up
             </Text>
           </Pressable>
