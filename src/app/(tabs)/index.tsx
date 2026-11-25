@@ -48,7 +48,9 @@ export default function HomeMapScreen() {
   const { colors, isDark } = useAppTheme();
   const insets = useSafeAreaInsets();
   const sheetRef = useRef<BottomSheet>(null);
+  const initialGpsFetchedRef = useRef(false);
   const [paySheetOpen, setPaySheetOpen] = useState(false);
+  const [recenterCount, setRecenterCount] = useState(0);
 
   const selectedService = useRydeStore((s) => s.selectedService);
   const setSelectedService = useRydeStore((s) => s.setSelectedService);
@@ -66,7 +68,8 @@ export default function HomeMapScreen() {
   const snapPoints = useMemo(() => ['52%', '74%'], []);
 
   useEffect(() => {
-    if (pickup.id === 'gps-current') {
+    if (pickup.id === 'gps-current' && !initialGpsFetchedRef.current) {
+      initialGpsFetchedRef.current = true;
       locateUserGps().catch(() => {});
     }
     if (destination) {
@@ -103,7 +106,9 @@ export default function HomeMapScreen() {
   const handleRecenter = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     sheetRef.current?.snapToIndex(0);
+    setRecenterCount((c) => c + 1);
     const found = await locateUserGps();
+    setRecenterCount((c) => c + 1);
     if (!found) {
       Alert.alert(
         'Location Permission',
@@ -120,6 +125,7 @@ export default function HomeMapScreen() {
         destination={destination}
         routeCoords={routeGeometry?.coords}
         showRoute={false}
+        recenterTrigger={recenterCount}
       />
 
       {/* Top Floating Liquid Glass Location Bar + Notifications */}
@@ -134,8 +140,10 @@ export default function HomeMapScreen() {
           accessibilityLabel="Change current pickup location"
         >
           <GlassSurface radius={RADII.pill} contentStyle={styles.locPillInner}>
-            <View
-              style={[styles.statusDot, { backgroundColor: colors.success }]}
+            <Ionicons
+              name="navigate"
+              size={14}
+              color={colors.brandGoldDeep}
             />
             <Text
               numberOfLines={1}

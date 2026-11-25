@@ -25,7 +25,13 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BrandBadge, GlassSurface, OAuthButton, PrimaryButton } from '@/components/ui';
-import { RADII, SQUIRCLE, TABULAR_NUMS, TYPOGRAPHY } from '@/constants/theme';
+import {
+  NO_WEB_OUTLINE,
+  RADII,
+  SQUIRCLE,
+  TABULAR_NUMS,
+  TYPOGRAPHY,
+} from '@/constants/theme';
 import { useAppTheme } from '@/hooks/useAppTheme';
 import { useRydeStore } from '@/store/useRydeStore';
 
@@ -608,6 +614,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '500',
     height: '100%',
+    ...NO_WEB_OUTLINE,
   },
   errorBanner: {
     flexDirection: 'row',

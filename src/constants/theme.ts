@@ -108,6 +108,11 @@ export const SQUIRCLE = Platform.select({
   default: {},
 });
 
+export const NO_WEB_OUTLINE: TextStyle = Platform.select({
+  web: { outlineStyle: 'none' } as unknown as TextStyle,
+  default: {},
+});
+
 export const TYPOGRAPHY: Record<string, TextStyle> = {
   brand: {
     fontSize: 32,
