@@ -112,10 +112,18 @@ function buildMapLibreHtml(
 
   let usedFallback = false;
   let mapReady = false;
-  let pendingState = null;
+  let lastState = null;
   let pinMode = false;
   let lastFitKey = '';
   let activeMarkers = [];
+
+  function switchToFallback() {
+    if (usedFallback) return;
+    usedFallback = true;
+    try {
+      map.setStyle(FALLBACK_STYLE);
+    } catch (e) {}
+  }
 
   function postToHost(payload) {
     const str = JSON.stringify(payload);
@@ -126,21 +134,31 @@ function buildMapLibreHtml(
     }
   }
 
-  const map = new maplibregl.Map({
-    container: 'map',
-    style: PRIMARY_STYLE,
-    center: [${DEFAULT_CENTER.lng}, ${DEFAULT_CENTER.lat}],
-    zoom: 14.2,
-    pitch: 0,
-    attributionControl: { compact: true }
-  });
+  let map;
+  try {
+    map = new maplibregl.Map({
+      container: 'map',
+      style: PRIMARY_STYLE,
+      center: [${DEFAULT_CENTER.lng}, ${DEFAULT_CENTER.lat}],
+      zoom: 14.2,
+      pitch: 0,
+      attributionControl: { compact: true }
+    });
+  } catch (initErr) {
+    usedFallback = true;
+    map = new maplibregl.Map({
+      container: 'map',
+      style: FALLBACK_STYLE,
+      center: [${DEFAULT_CENTER.lng}, ${DEFAULT_CENTER.lat}],
+      zoom: 14.2,
+      pitch: 0,
+      attributionControl: { compact: true }
+    });
+  }
 
   map.on('error', function(err) {
-    if (!usedFallback && !mapReady) {
-      usedFallback = true;
-      try {
-        map.setStyle(FALLBACK_STYLE);
-      } catch (e) {}
+    if (!usedFallback) {
+      switchToFallback();
     }
   });
 
@@ -194,14 +212,16 @@ function buildMapLibreHtml(
   }
 
   function applyState(state) {
+    lastState = state;
     if (!mapReady) {
-      pendingState = state;
       return;
     }
 
     pinMode = !!state.pinMode;
     clearMarkers();
-    ensureRouteLayers(!!state.isDark);
+    try {
+      ensureRouteLayers(!!state.isDark);
+    } catch (e) {}
 
     const p = state.pickup;
     const d = state.destination;
@@ -300,21 +320,29 @@ function buildMapLibreHtml(
   }
 
   function markMapReady() {
-    if (mapReady) return;
+    const firstReady = !mapReady;
     mapReady = true;
     try {
       ensureRouteLayers(${isDark ? 'true' : 'false'});
-      if (pendingState) {
-        applyState(pendingState);
-        pendingState = null;
+      if (lastState) {
+        lastFitKey = '';
+        applyState(lastState);
       }
     } catch (e) {}
-    postToHost({ type: 'ready' });
+    if (firstReady) {
+      postToHost({ type: 'ready' });
+    }
   }
 
+  map.on('style.load', markMapReady);
   map.on('load', markMapReady);
   map.on('idle', markMapReady);
-  setTimeout(markMapReady, 1200);
+  setTimeout(function() {
+    if (!map.isStyleLoaded() && !usedFallback) {
+      switchToFallback();
+    }
+    markMapReady();
+  }, 1800);
 
   map.on('click', function(e) {
     if (!pinMode) return;
@@ -364,6 +392,29 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
       ),
     [isDark, colors.brandGold, colors.brandGoldDeep, colors.brandGoldSoft]
   );
+
+  // Use a same-origin Blob URL on Web so MapLibre WebGL workers & tile CORS
+  // inherit the real page origin instead of an opaque `about:srcdoc` null origin
+  const webBlobUrl = useMemo(() => {
+    if (
+      Platform.OS !== 'web' ||
+      typeof window === 'undefined' ||
+      typeof Blob === 'undefined' ||
+      typeof URL?.createObjectURL !== 'function'
+    ) {
+      return null;
+    }
+    const blob = new Blob([html], { type: 'text/html' });
+    return URL.createObjectURL(blob);
+  }, [html]);
+
+  useEffect(() => {
+    return () => {
+      if (webBlobUrl && typeof URL?.revokeObjectURL === 'function') {
+        URL.revokeObjectURL(webBlobUrl);
+      }
+    };
+  }, [webBlobUrl]);
 
   // Reset loaded shimmer briefly when switching Light/Dark vector style
   useEffect(() => {
@@ -489,7 +540,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
       {Platform.OS === 'web' ? (
         React.createElement('iframe', {
           ref: iframeRef,
-          srcDoc: html,
+          ...(webBlobUrl ? { src: webBlobUrl } : { srcDoc: html }),
           title: 'Ryde Vector Map',
           style: {
             width: '100%',
