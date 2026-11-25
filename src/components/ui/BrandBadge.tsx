@@ -46,6 +46,7 @@ export const BrandBadge: React.FC<BrandBadgeProps> = ({
 
 const styles = StyleSheet.create({
   badge: {
+    alignSelf: 'center',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1.5,

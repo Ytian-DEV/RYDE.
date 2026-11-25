@@ -521,8 +521,10 @@ const styles = StyleSheet.create({
     gap: 20,
   },
   brandRow: {
+    width: '100%',
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
   },
   headingGroup: {
     gap: 6,
