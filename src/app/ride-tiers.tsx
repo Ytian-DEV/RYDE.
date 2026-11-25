@@ -4,7 +4,6 @@ import {
   Pressable,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 import { router } from 'expo-router';
@@ -58,8 +57,6 @@ export default function RideTiersScreen() {
   const selectedTierId = useRydeStore((s) => s.selectedTierId);
   const setSelectedTierId = useRydeStore((s) => s.setSelectedTierId);
   const selectedPayment = useRydeStore((s) => s.selectedPayment);
-  const paymentReference = useRydeStore((s) => s.paymentReference);
-  const setPaymentReference = useRydeStore((s) => s.setPaymentReference);
   const scheduledTimeLabel = useRydeStore((s) => s.scheduledTimeLabel);
   const appliedPromo = useRydeStore((s) => s.appliedPromo);
   const startRideRequest = useRydeStore((s) => s.startRideRequest);
@@ -97,9 +94,6 @@ export default function RideTiersScreen() {
   const etaLabel = loadingRoute
     ? 'Calculating route…'
     : `${routeGeometry?.durationMin ?? Math.max(5, Math.round(selectedFare.distanceKm * 2.4))} min • ${selectedFare.distanceKm.toFixed(1)} km`;
-
-  const showRefInput =
-    selectedPayment === 'gcash' || selectedPayment === 'bank_transfer';
 
   const handleConfirm = async () => {
     setSubmitting(true);
@@ -354,32 +348,6 @@ export default function RideTiersScreen() {
             </Pressable>
           </View>
 
-          {showRefInput ? (
-            <View
-              style={[
-                styles.refBox,
-                SQUIRCLE,
-                {
-                  backgroundColor: colors.pill,
-                  borderColor: colors.borderSubtle,
-                },
-              ]}
-            >
-              <Ionicons
-                name="receipt-outline"
-                size={16}
-                color={colors.textSecondary}
-              />
-              <TextInput
-                value={paymentReference}
-                onChangeText={setPaymentReference}
-                placeholder={`Optional ${currentPayment.label} Ref # (saved to receipt)`}
-                placeholderTextColor={colors.textTertiary}
-                style={[styles.refInput, { color: colors.textPrimary }]}
-              />
-            </View>
-          ) : null}
-
           <PrimaryButton
             label={`Confirm ${selectedTier.name} • ${formatPeso(selectedFare.totalFare)}`}
             loading={submitting}
@@ -522,19 +490,5 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     flex: 1,
-  },
-  refBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    height: 46,
-    borderRadius: 16,
-    borderWidth: 1,
-    paddingHorizontal: 14,
-    gap: 8,
-  },
-  refInput: {
-    flex: 1,
-    fontSize: 13,
-    fontWeight: '500',
   },
 });
