@@ -165,6 +165,28 @@ export const TYPOGRAPHY: Record<string, TextStyle> = {
     fontWeight: '700',
     letterSpacing: 0.5,
   },
+  /** Editorial fare / price display — bold, tightly tracked, tabular */
+  fareDisplay: {
+    fontSize: 34,
+    lineHeight: 40,
+    fontWeight: '800',
+    letterSpacing: -1.1,
+    fontVariant: ['tabular-nums'],
+  },
+  fare: {
+    fontSize: 17,
+    lineHeight: 22,
+    fontWeight: '800',
+    letterSpacing: -0.4,
+    fontVariant: ['tabular-nums'],
+  },
+  /** Quiet, well-spaced uppercase overline label */
+  overline: {
+    fontSize: 11,
+    lineHeight: 14,
+    fontWeight: '700',
+    letterSpacing: 0.9,
+  },
 };
 
 export function formatPeso(amount: number): string {

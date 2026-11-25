@@ -20,6 +20,7 @@ import {
   GlassIconButton,
   GlassSurface,
   InteractiveMap,
+  PressableScale,
   PrimaryButton,
 } from '@/components/ui';
 import { RADII, SQUIRCLE, TABULAR_NUMS } from '@/constants/theme';
@@ -202,12 +203,10 @@ export default function HomeMapScreen() {
             {SERVICE_ITEMS.map((item) => {
               const active = selectedService === item.id;
               return (
-                <Pressable
+                <PressableScale
                   key={item.id}
-                  onPress={() => {
-                    Haptics.selectionAsync().catch(() => {});
-                    setSelectedService(item.id);
-                  }}
+                  onPress={() => setSelectedService(item.id)}
+                  haptic="selection"
                   accessibilityRole="button"
                   accessibilityState={{ selected: active }}
                   style={[
@@ -254,7 +253,7 @@ export default function HomeMapScreen() {
                   >
                     ₱{item.startingFare}+
                   </Text>
-                </Pressable>
+                </PressableScale>
               );
             })}
           </View>

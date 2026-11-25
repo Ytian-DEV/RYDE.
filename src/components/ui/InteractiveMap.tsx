@@ -36,6 +36,8 @@ export interface InteractiveMapProps {
   recenterTrigger?: number;
   onPinSelect?: (lat: number, lng: number) => void;
   onPinCenterChange?: (lat: number, lng: number) => void;
+  /** Fires true when the user starts panning the map in pin mode and false when released */
+  onPinDragChange?: (dragging: boolean) => void;
 }
 
 const PICKUP_SVG = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 2L4.5 20.29l.71.71L12 18l6.79 3 .71-.71L12 2z" fill="#FFFFFF"/></svg>`;
@@ -170,6 +172,10 @@ function buildMapLibreHtml(
   // Track manual user pan/zoom gestures so we never snap the camera back automatically
   map.on('dragstart', function() {
     userHasPanned = true;
+    if (pinMode) postToHost({ type: 'dragState', dragging: true });
+  });
+  map.on('dragend', function() {
+    if (pinMode) postToHost({ type: 'dragState', dragging: false });
   });
   map.on('zoomstart', function(e) {
     if (e && e.originalEvent) {
@@ -198,9 +204,9 @@ function buildMapLibreHtml(
         source: 'ryde-route',
         layout: { 'line-join': 'round', 'line-cap': 'round' },
         paint: {
-          'line-color': isDark ? '#0B0E14' : '#181C23',
-          'line-width': 9,
-          'line-opacity': 0.55
+          'line-color': isDark ? '#0B0E14' : '#FFFFFF',
+          'line-width': 10,
+          'line-opacity': isDark ? 0.7 : 0.95
         }
       });
     }
@@ -450,6 +456,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
   recenterTrigger = 0,
   onPinSelect,
   onPinCenterChange,
+  onPinDragChange,
 }) => {
   const { colors, isDark } = useAppTheme();
   const webViewRef = useRef<WebView>(null);
@@ -581,6 +588,8 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
           pushStateToMap();
         } else if (data?.type === 'pin' && onPinSelect) {
           onPinSelect(Number(data.lat), Number(data.lng));
+        } else if (data?.type === 'dragState') {
+          onPinDragChange?.(Boolean(data.dragging));
         } else if (data?.type === 'pinCenter') {
           const lat = Number(data.lat);
           const lng = Number(data.lng);
@@ -596,7 +605,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     };
     window.addEventListener('message', handler);
     return () => window.removeEventListener('message', handler);
-  }, [onPinSelect, onPinCenterChange, mapPayload]);
+  }, [onPinSelect, onPinCenterChange, onPinDragChange, mapPayload]);
 
   const handleNativeMessage = (event: WebViewMessageEvent) => {
     try {
@@ -604,7 +613,12 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
         type?: string;
         lat?: number;
         lng?: number;
+        dragging?: boolean;
       };
+      if (data.type === 'dragState') {
+        onPinDragChange?.(Boolean(data.dragging));
+        return;
+      }
       if (data.type === 'ready') {
         readyRef.current = true;
         setMapLoaded(true);
