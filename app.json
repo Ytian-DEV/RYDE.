@@ -8,7 +8,7 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
-      "backgroundColor": "#F5F2EC"
+      "backgroundColor": "#F6F4F6"
     },
     "ios": {
       "supportsTablet": false,
@@ -21,7 +21,7 @@
       "package": "com.ryde.mobile",
       "edgeToEdgeEnabled": true,
       "adaptiveIcon": {
-        "backgroundColor": "#FFD95A"
+        "backgroundColor": "#DB2777"
       }
     },
     "web": {

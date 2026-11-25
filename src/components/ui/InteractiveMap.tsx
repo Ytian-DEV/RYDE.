@@ -35,7 +35,12 @@ export interface InteractiveMapProps {
   onPinSelect?: (lat: number, lng: number) => void;
 }
 
-function buildMapLibreHtml(isDark: boolean): string {
+function buildMapLibreHtml(
+  isDark: boolean,
+  accentColor: string,
+  accentDeepColor: string,
+  accentSoftColor: string
+): string {
   const styleUrl = getMapLibreStyleUrl(isDark);
   const fallbackStyleJson = JSON.stringify(getFallbackRasterStyle(isDark));
   const bg = isDark ? '#14181F' : '#ECEAE2';
@@ -74,8 +79,8 @@ function buildMapLibreHtml(isDark: boolean): string {
   }
   .ryde-driver {
     width: 24px; height: 24px; border-radius: 50%;
-    background: #FFD95A; border: 3px solid #181C23;
-    box-shadow: 0 0 0 10px rgba(255, 217, 90, 0.35), 0 4px 12px rgba(0,0,0,0.38);
+    background: ${accentColor}; border: 3px solid #181C23;
+    box-shadow: 0 0 0 10px ${accentSoftColor}, 0 4px 12px rgba(0,0,0,0.38);
   }
   .ryde-radar-wrap {
     position: relative; width: 120px; height: 120px;
@@ -84,13 +89,13 @@ function buildMapLibreHtml(isDark: boolean): string {
   }
   .ryde-radar-ring {
     position: absolute; width: 120px; height: 120px; border-radius: 50%;
-    border: 2px solid #E5B82E; background: rgba(255, 217, 90, 0.22);
+    border: 2px solid ${accentDeepColor}; background: ${accentSoftColor};
     animation: rydePulse 2s ease-out infinite;
   }
   .ryde-radar-ring.delay { animation-delay: 1s; }
   .ryde-radar-core {
     width: 20px; height: 20px; border-radius: 50%;
-    background: #181C23; border: 4px solid #FFD95A; z-index: 2;
+    background: #181C23; border: 4px solid ${accentColor}; z-index: 2;
   }
   @keyframes rydePulse {
     0% { transform: scale(0.35); opacity: 0.85; }
@@ -166,7 +171,7 @@ function buildMapLibreHtml(isDark: boolean): string {
         source: 'ryde-route',
         layout: { 'line-join': 'round', 'line-cap': 'round' },
         paint: {
-          'line-color': isDark ? '#FFD95A' : '#E5B82E',
+          'line-color': isDark ? '${accentColor}' : '${accentDeepColor}',
           'line-width': 5,
           'line-opacity': 0.96
         }
@@ -349,7 +354,16 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
   const readyRef = useRef(false);
   const [mapLoaded, setMapLoaded] = useState(false);
 
-  const html = useMemo(() => buildMapLibreHtml(isDark), [isDark]);
+  const html = useMemo(
+    () =>
+      buildMapLibreHtml(
+        isDark,
+        colors.brandGold,
+        colors.brandGoldDeep,
+        colors.brandGoldSoft
+      ),
+    [isDark, colors.brandGold, colors.brandGoldDeep, colors.brandGoldSoft]
+  );
 
   // Reset loaded shimmer briefly when switching Light/Dark vector style
   useEffect(() => {
