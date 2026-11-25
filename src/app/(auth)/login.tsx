@@ -162,10 +162,22 @@ export default function LoginScreen() {
           </View>
 
           <View style={styles.headingGroup}>
-            <Text style={[TYPOGRAPHY.largeTitle, { color: colors.textPrimary }]}>
+            <Text
+              style={[
+                TYPOGRAPHY.largeTitle,
+                styles.headingText,
+                { color: colors.textPrimary },
+              ]}
+            >
               {mode === 'signin' ? 'Welcome back.' : 'Create your account.'}
             </Text>
-            <Text style={[TYPOGRAPHY.body, { color: colors.textSecondary }]}>
+            <Text
+              style={[
+                TYPOGRAPHY.body,
+                styles.subheadingText,
+                { color: colors.textSecondary },
+              ]}
+            >
               {mode === 'signin'
                 ? 'Sign in with your email and password to access your live trips and Ryde Wallet.'
                 : 'Sign up with email and your Philippine mobile number to ride or drive with Ryde.'}
@@ -527,7 +539,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   headingGroup: {
+    alignItems: 'center',
     gap: 6,
+  },
+  headingText: {
+    textAlign: 'center',
+  },
+  subheadingText: {
+    textAlign: 'center',
   },
   segmentTrack: {
     flexDirection: 'row',
