@@ -294,15 +294,22 @@ function buildMapLibreHtml(isDark: boolean): string {
     }
   }
 
-  map.on('load', function() {
+  function markMapReady() {
+    if (mapReady) return;
     mapReady = true;
-    ensureRouteLayers(${isDark ? 'true' : 'false'});
-    if (pendingState) {
-      applyState(pendingState);
-      pendingState = null;
-    }
+    try {
+      ensureRouteLayers(${isDark ? 'true' : 'false'});
+      if (pendingState) {
+        applyState(pendingState);
+        pendingState = null;
+      }
+    } catch (e) {}
     postToHost({ type: 'ready' });
-  });
+  }
+
+  map.on('load', markMapReady);
+  map.on('idle', markMapReady);
+  setTimeout(markMapReady, 1200);
 
   map.on('click', function(e) {
     if (!pinMode) return;
@@ -348,6 +355,10 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
   useEffect(() => {
     readyRef.current = false;
     setMapLoaded(false);
+    const safety = setTimeout(() => {
+      setMapLoaded(true);
+    }, 1500);
+    return () => clearTimeout(safety);
   }, [isDark]);
 
   // Compute driver coordinate (prefer live GPS, fallback to route polyline interpolation)

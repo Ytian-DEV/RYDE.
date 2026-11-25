@@ -62,11 +62,6 @@ export const GlassSurface: React.FC<GlassSurfaceProps> = ({
         styles.outer,
         SQUIRCLE,
         radiusStyle,
-        {
-          shadowColor: colors.shadowColor,
-          shadowOpacity: elevated ? (isDark ? 0.52 : 0.16) : 0,
-        },
-        elevated ? styles.shadow : null,
         style ?? null,
       ]}
     >
@@ -129,11 +124,6 @@ export const GlassSurface: React.FC<GlassSurfaceProps> = ({
 const styles = StyleSheet.create({
   outer: {
     position: 'relative',
-  },
-  shadow: {
-    shadowOffset: { width: 0, height: -4 },
-    shadowRadius: 28,
-    elevation: 14,
   },
   clipper: {
     overflow: 'hidden',

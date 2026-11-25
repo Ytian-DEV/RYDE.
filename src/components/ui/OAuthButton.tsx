@@ -110,8 +110,6 @@ export const OAuthButton: React.FC<OAuthButtonProps> = ({
           backgroundColor: surfaceBg,
           borderColor: colors.borderSpecular,
           opacity: disabled && !loading ? 0.52 : 1,
-          shadowColor: colors.shadowColor,
-          shadowOpacity: isDark ? 0.3 : 0.08,
         },
         animatedStyle,
       ]}
@@ -140,9 +138,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 11,
     paddingHorizontal: 18,
-    shadowOffset: { width: 0, height: 6 },
-    shadowRadius: 14,
-    elevation: 3,
   },
   iconWrap: {
     width: 22,
