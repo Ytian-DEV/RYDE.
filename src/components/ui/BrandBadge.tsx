@@ -25,7 +25,6 @@ export const BrandBadge: React.FC<BrandBadgeProps> = ({
           height: size,
           borderRadius: radius,
           backgroundColor: colors.brandGold,
-          shadowColor: colors.brandGoldDeep,
         },
       ]}
     >
@@ -51,10 +50,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 1.5,
     borderColor: 'rgba(255, 255, 255, 0.72)',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.36,
-    shadowRadius: 24,
-    elevation: 8,
   },
   wordmark: {
     fontWeight: '900',

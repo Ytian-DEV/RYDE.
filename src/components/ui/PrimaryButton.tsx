@@ -75,7 +75,7 @@ export const PrimaryButton: React.FC<PrimaryButtonProps> = ({
       : variant === 'obsidian'
         ? colors.obsidian
         : variant === 'danger'
-          ? colors.dangerSoft
+          ? '#B91C1C'
           : colors.pill;
 
   const textColor =
@@ -84,14 +84,14 @@ export const PrimaryButton: React.FC<PrimaryButtonProps> = ({
       : variant === 'obsidian'
         ? colors.brandGold
         : variant === 'danger'
-          ? colors.danger
+          ? '#FFFFFF'
           : colors.textPrimary;
 
   const borderColor =
     variant === 'gold'
       ? 'rgba(255, 255, 255, 0.55)'
       : variant === 'danger'
-        ? 'rgba(220, 38, 38, 0.25)'
+        ? '#991B1B'
         : colors.borderSubtle;
 
   return (
@@ -110,8 +110,6 @@ export const PrimaryButton: React.FC<PrimaryButtonProps> = ({
           backgroundColor: bgColor,
           borderColor,
           opacity: disabled && !loading ? 0.52 : 1,
-          shadowColor: variant === 'gold' ? colors.brandGoldDeep : colors.shadowColor,
-          shadowOpacity: variant === 'gold' ? (isDark ? 0.28 : 0.34) : 0.08,
         },
         animatedStyle,
         style ?? null,
@@ -143,9 +141,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 24,
-    shadowOffset: { width: 0, height: 8 },
-    shadowRadius: 18,
-    elevation: 5,
   },
   loadingRow: {
     flexDirection: 'row',
