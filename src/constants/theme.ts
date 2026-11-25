@@ -27,18 +27,18 @@ export interface RydeColorPalette {
 }
 
 export const LIGHT_COLORS: RydeColorPalette = {
-  brandGold: '#FFD95A',
-  brandGoldDeep: '#E5B82E',
-  brandGoldSoft: 'rgba(255, 217, 90, 0.26)',
-  canvas: '#F5F2EC',
+  brandGold: '#DB2777',
+  brandGoldDeep: '#BE185D',
+  brandGoldSoft: 'rgba(219, 39, 119, 0.14)',
+  canvas: '#F6F4F6',
   elevated: '#FFFFFF',
   glass: 'rgba(255, 255, 255, 0.86)',
-  glassHeavy: 'rgba(250, 248, 244, 0.95)',
+  glassHeavy: 'rgba(250, 248, 251, 0.95)',
   pill: 'rgba(24, 28, 35, 0.06)',
   textPrimary: '#181C23',
   textSecondary: '#5E6673',
   textTertiary: '#8C95A3',
-  textOnGold: '#181C23',
+  textOnGold: '#FFFFFF',
   borderSpecular: 'rgba(255, 255, 255, 0.85)',
   borderSubtle: 'rgba(24, 28, 35, 0.08)',
   success: '#16A34A',
@@ -53,9 +53,9 @@ export const LIGHT_COLORS: RydeColorPalette = {
 };
 
 export const DARK_COLORS: RydeColorPalette = {
-  brandGold: '#FFD95A',
-  brandGoldDeep: '#F5C83B',
-  brandGoldSoft: 'rgba(255, 217, 90, 0.18)',
+  brandGold: '#EC4899',
+  brandGoldDeep: '#DB2777',
+  brandGoldSoft: 'rgba(236, 72, 153, 0.18)',
   canvas: '#14181F',
   elevated: '#1D232D',
   glass: 'rgba(24, 30, 41, 0.86)',
@@ -64,7 +64,7 @@ export const DARK_COLORS: RydeColorPalette = {
   textPrimary: '#F8F9FA',
   textSecondary: '#9AA4B2',
   textTertiary: '#6C7685',
-  textOnGold: '#181C23',
+  textOnGold: '#FFFFFF',
   borderSpecular: 'rgba(255, 255, 255, 0.16)',
   borderSubtle: 'rgba(255, 255, 255, 0.10)',
   success: '#22C55E',
