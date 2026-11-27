@@ -23,25 +23,30 @@ export default function OAuthCallbackScreen() {
           return;
         }
 
-        const currentUrl =
-          typeof window !== 'undefined' && window.location?.href
-            ? window.location.href
-            : (await Linking.getInitialURL()) ?? '';
+        // Check if detectSessionInUrl on Web already exchanged the PKCE code
+        const initialSession = await supabase.auth.getSession();
 
-        if (currentUrl) {
-          const parsed = new URL(currentUrl);
-          const code = parsed.searchParams.get('code');
-          if (code) {
-            await supabase.auth.exchangeCodeForSession(code);
-          } else if (parsed.hash) {
-            const hashParams = new URLSearchParams(parsed.hash.replace(/^#/, ''));
-            const accessToken = hashParams.get('access_token');
-            const refreshToken = hashParams.get('refresh_token');
-            if (accessToken && refreshToken) {
-              await supabase.auth.setSession({
-                access_token: accessToken,
-                refresh_token: refreshToken,
-              });
+        if (!initialSession?.data?.session) {
+          const currentUrl =
+            typeof window !== 'undefined' && window.location?.href
+              ? window.location.href
+              : (await Linking.getInitialURL()) ?? '';
+
+          if (currentUrl) {
+            const parsed = new URL(currentUrl);
+            const code = parsed.searchParams.get('code');
+            if (code) {
+              await supabase.auth.exchangeCodeForSession(code);
+            } else if (parsed.hash) {
+              const hashParams = new URLSearchParams(parsed.hash.replace(/^#/, ''));
+              const accessToken = hashParams.get('access_token');
+              const refreshToken = hashParams.get('refresh_token');
+              if (accessToken && refreshToken) {
+                await supabase.auth.setSession({
+                  access_token: accessToken,
+                  refresh_token: refreshToken,
+                });
+              }
             }
           }
         }
